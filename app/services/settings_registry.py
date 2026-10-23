@@ -56,6 +56,7 @@ SETTINGS: tuple[SettingDef, ...] = (
     # --- Internal state -------------------------------------------------------
     _b("setup.completed", False, description="First-run wizard finished"),
     _b("bootstrap.env_imported", False, description="Legacy env vars imported (one-time)"),
+    _s("setup.claim_hash", "", description="SHA-256 of the one-time setup code (cleared on setup)"),
     # --- General --------------------------------------------------------------
     _s("general.site_name", "WishPanel"),
     _u("general.public_url", description="Public URL used in links/notifications"),

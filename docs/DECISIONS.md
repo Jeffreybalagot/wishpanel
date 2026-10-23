@@ -15,11 +15,10 @@ whenever the request arrived over HTTPS (directly or via a trusted proxy's
 `X-Forwarded-Proto`). `always` / `never` are available. `HttpOnly` and `SameSite=Lax` are
 always set.
 
-**First-run security** — Before setup there is no admin, so `/api/setup/*` is open. It can only
-finish by signing in with an account holding the admin role *on the Kavita being configured*,
-and it locks permanently afterwards (returns 409). The remaining window is "someone on your LAN
-completes setup before you do"; a one-time setup token printed to the container log would close
-it at the cost of an extra step. **Open question for review.**
+**First-run security** — Before setup there is no admin. Setup can only finish by signing in
+with an account holding the admin role *on the Kavita being configured*, and it locks
+permanently afterwards (returns 409). The "someone on the LAN claims it first" window is closed
+by the M1.1 setup code (below).
 
 **Server-side sessions** — Sessions are rows in SQLite keyed by SHA-256 of the cookie token, so
 a leaked database can't be replayed as cookies, logout is real, and blocking a user ends their
@@ -68,3 +67,44 @@ than a separate `app/auth/` package, to avoid a third place for the same concern
 **Frontend** — Alpine.js 3.17.5 is vendored (`app/web/static/vendor/`), so the UI works with no
 internet access and no CDN. CSP allows `'unsafe-eval'` for scripts only because Alpine evaluates
 `x-*` expressions with `Function()`; there are no inline scripts.
+
+## Milestone 1.1 (hardening)
+
+**Setup claim code** — 16 characters from a 30-symbol alphabet with no look-alikes
+(≈78 bits), grouped `XXXX-XXXX-XXXX-XXXX`, case/space/dash-insensitive. Required by *every*
+setup action — `claim`, `kavita/test` and `complete` — so an unauthenticated visitor can't even
+use the Kavita test as a probe of your network. Shown in the container log on every boot while
+unclaimed and in `/config/setup-code.txt` (0600). Only a SHA-256 is stored in the database; a
+code file that doesn't match the stored hash is ignored and replaced, so writing your own code
+into the file doesn't work. Deleting the file rotates the code on next boot. Wrong codes are
+throttled per IP with the login limits and audited. The code is deliberately *not* matched by
+the log-redaction filter (it has to be readable in the log); it is worthless once setup
+completes, at which point the hash is cleared and the file deleted.
+
+**Health split** — `/health` (Docker HEALTHCHECK, CI smoke test) checks only the container:
+database and `/config` writability. External reachability moved to admin-only
+`/api/admin/services` (cached 30 s). Reason: a Kavita outage made the old `/health` report
+`degraded`; harmless today, but any orchestrator treating that as unhealthy would restart
+WishPanel for someone else's problem, and the endpoint was also revealing topology to anyone.
+This supersedes the spec's "/health checks DB + critical external services" (§9).
+
+**Locked dependencies** — `uv.lock` is the single source of versions. CI runs `uv lock --check`
+and `uv sync --locked --extra dev`; the Dockerfile runs `uv sync --locked --no-dev` (no dev
+tools in the image). uv itself is pinned to the same version in CI and Docker; a test enforces
+that they match. The base image is still referenced by tag (`python:3.13-slim`); pinning it by
+digest (with Dependabot to bump it) is a reasonable follow-up.
+
+**Build → smoke → publish** — One reusable workflow (`image.yml`) used by both `ci.yml` (main →
+`:edge` + `:sha-<commit>`) and `release.yml` (tags → `:X.Y.Z`, `:X.Y`, `:latest`). It builds
+amd64 + arm64 once into an OCI archive (nothing pushed), boots each architecture *from that
+archive* with an empty `/config` (`docker/smoke-test.sh`; arm64 under QEMU), and only then
+copies the same archive to GHCR with `skopeo --preserve-digests`, verifying each pushed tag's
+digest equals the built one. So the published digest is exactly the tested digest. Pull
+requests run the same build and smoke tests but never publish. Provenance/SBOM attestations are
+off for now to keep the archive a plain two-platform index; they can be added back in M5.
+
+**What the smoke test asserts** — healthy within 180 s; `/health` ok and free of external
+checks; UI and vendored Alpine served; PID 1 runs as the requested PUID (1001), not root;
+`secret.key`, `setup-code.txt`, `wishpanel.db` owned by PUID:PGID, key and code mode 0600;
+setup code printed in the log; wrong/missing code rejected on claim and Kavita test; right code
+accepted; after `docker restart` it's healthy again with the same key and code.

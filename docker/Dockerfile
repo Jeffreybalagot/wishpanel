@@ -1,20 +1,26 @@
 # ---------------------------------------------------------------- builder
 FROM python:3.13-slim AS builder
 
-ENV PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# Keep in sync with UV_VERSION in .github/workflows (a test enforces this).
+ARG UV_VERSION=0.11.32
 
-RUN python -m venv /opt/venv
-ENV PATH=/opt/venv/bin:$PATH
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1
+
+RUN pip install "uv==${UV_VERSION}"
 
 WORKDIR /src
-# Dependencies first so code-only changes reuse the cached layer.
-COPY pyproject.toml README.md ./
-RUN mkdir app && echo '__version__ = "0"' > app/__init__.py \
- && pip install . && pip uninstall -y wishpanel && rm -rf app
+# Dependencies first, exactly as pinned in uv.lock, so code-only changes reuse
+# this layer. --locked fails the build if uv.lock is out of date with pyproject.
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --locked --no-dev --no-install-project --python /usr/local/bin/python3
 COPY app ./app
-RUN pip install --no-deps . \
- && find /opt/venv -name '__pycache__' -prune -exec rm -rf {} +
+RUN uv sync --locked --no-dev --no-editable --python /usr/local/bin/python3
 
 # ---------------------------------------------------------------- runtime
 FROM python:3.13-slim

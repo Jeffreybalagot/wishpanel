@@ -35,15 +35,31 @@
         (Kapowarr, Suwayomi, ComicVine) is set up later in <strong>Admin → Settings</strong>.</p>
 
       <ol class="steps">
+        <li :class="{ active: setup.step === 0, done: setup.step > 0 }">Setup code</li>
         <li :class="{ active: setup.step === 1, done: setup.step > 1 }">Kavita URL</li>
         <li :class="{ active: setup.step === 2 }">Admin sign-in</li>
       </ol>
+
+      <form x-show="setup.step === 0" @submit.prevent="setupClaim()">
+        <label class="field">
+          <span>Setup code</span>
+          <input required placeholder="XXXX-XXXX-XXXX-XXXX" x-model.trim="setup.code"
+                 class="mono" autocomplete="one-time-code" spellcheck="false" x-ref="setupCode">
+          <small class="muted">Proves you control this container. Find it in the container log
+            (Unraid: Docker → wishpanel → Logs) or in <span class="mono">setup-code.txt</span>
+            inside its <span class="mono">/config</span> folder.</small>
+        </label>
+        <div class="notice bad" x-show="setup.step === 0 && error" x-text="error"></div>
+        <div class="row">
+          <button type="submit" class="btn" :disabled="busy || !setup.code">Continue</button>
+        </div>
+      </form>
 
       <form x-show="setup.step === 1" @submit.prevent="setupNext()">
         <label class="field">
           <span>Kavita URL</span>
           <input type="url" required placeholder="http://10.0.0.5:5000" x-model.trim="setup.url"
-                 autocomplete="url" autofocus>
+                 autocomplete="url">
           <small class="muted">The address WishPanel's container can reach, including the port.</small>
         </label>
         <div class="notice" x-show="setup.test" :class="setup.test?.ok ? 'ok' : 'bad'"
@@ -62,7 +78,7 @@
           <input required x-model="setup.username" autocomplete="username"></label>
         <label class="field"><span>Password</span>
           <input type="password" required x-model="setup.password" autocomplete="current-password"></label>
-        <div class="notice bad" x-show="error" x-text="error"></div>
+        <div class="notice bad" x-show="setup.step === 2 && error" x-text="error"></div>
         <div class="row">
           <button type="button" class="btn ghost" @click="setup.step = 1; error = ''">Back</button>
           <button type="submit" class="btn" :disabled="busy">Finish setup</button>
@@ -81,7 +97,7 @@
         <input required x-model="creds.username" autocomplete="username" x-ref="loginUser"></label>
       <label class="field"><span>Password</span>
         <input type="password" required x-model="creds.password" autocomplete="current-password"></label>
-      <div class="notice bad" x-show="error" x-text="error"></div>
+      <div class="notice bad" x-show="view === 'login' && error" x-text="error"></div>
       <button type="submit" class="btn block" :disabled="busy">
         <span x-show="!busy">Sign in</span><span x-show="busy">Signing in…</span></button>
     </form>
@@ -158,13 +174,23 @@
               <h1 class="page-title">Overview</h1>
               <div class="grid">
                 <div class="card">
-                  <h3>Health</h3>
+                  <h3>Container health</h3>
                   <p><span class="dot" :class="admin?.health?.status"></span>
                     <span x-text="admin?.health?.status || '…'"></span></p>
                   <template x-for="(c, name) in (admin?.health?.checks || {})" :key="name">
                     <p class="sm"><span class="dot" :class="c.status"></span>
                       <span class="cap" x-text="name"></span>:
                       <span class="muted" x-text="c.message || c.status"></span></p>
+                  </template>
+                </div>
+                <div class="card">
+                  <h3>External services</h3>
+                  <p><span class="dot" :class="admin?.services?.status"></span>
+                    <span x-text="admin?.services?.status || '…'"></span></p>
+                  <template x-for="(c, name) in (admin?.services?.services || {})" :key="name">
+                    <p class="sm"><span class="dot" :class="c.status"></span>
+                      <span class="cap" x-text="name"></span>:
+                      <span class="muted" x-text="c.message || c.status.replace('_', ' ')"></span></p>
                   </template>
                 </div>
                 <div class="card">

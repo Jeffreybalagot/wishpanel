@@ -71,10 +71,21 @@ def client(cfg: BootstrapConfig, kavita: respx.MockRouter) -> Iterator[TestClien
         yield c
 
 
+def setup_code(client: TestClient) -> str:
+    """The claim code exactly as an admin would read it from /config."""
+    path = client.app.state.ctx.config.config_dir / "setup-code.txt"
+    return path.read_text().strip()
+
+
 def do_setup(client: TestClient, username: str = "admin", password: str = "adminpw") -> dict:
     r = client.post(
         "/api/setup/complete",
-        json={"kavita_url": KAVITA, "username": username, "password": password},
+        json={
+            "code": setup_code(client),
+            "kavita_url": KAVITA,
+            "username": username,
+            "password": password,
+        },
     )
     assert r.status_code == 200, r.text
     return r.json()

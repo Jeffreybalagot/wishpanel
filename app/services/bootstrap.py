@@ -8,13 +8,14 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Mapping
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import BootstrapConfig
 from app.core.crypto import SecretBox, load_or_create_master_key
 from app.db.session import run_migrations
-from app.services import audit
+from app.services import audit, setup_claim
 from app.services.settings import SettingsService, SettingValidationError
 from app.services.settings_registry import REGISTRY
 
@@ -42,9 +43,10 @@ def prepare_filesystem(cfg: BootstrapConfig) -> SecretBox:
 async def seed(
     sessionmaker: async_sessionmaker[AsyncSession],
     box: SecretBox,
+    config_dir: Path,
     env: Mapping[str, str] | None = None,
 ) -> None:
-    """Async part: default settings + one-time import of v1 environment variables."""
+    """Async part: default settings, one-time v1 env import, setup claim code."""
     env = os.environ if env is None else env
     async with sessionmaker() as db:
         settings = SettingsService(db, box)
@@ -63,7 +65,11 @@ async def seed(
                     "your container template.",
                     extra={"keys": ",".join(imported)},
                 )
+
+        code = await setup_claim.ensure_claim_code(settings, config_dir)
         await db.commit()
+    if code:
+        setup_claim.announce(code, config_dir)
 
 
 async def _import_legacy_env(settings: SettingsService, env: Mapping[str, str]) -> list[str]:

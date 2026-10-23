@@ -1,4 +1,4 @@
-"""/health, public site info, and the admin overview used by the Admin shell."""
+"""/health (local only), public site info, and admin-only service status."""
 
 from __future__ import annotations
 
@@ -17,7 +17,8 @@ router = APIRouter(tags=["system"])
 
 @health_router.get("/health", include_in_schema=True)
 async def health(ctx: Ctx) -> JSONResponse:
-    code, body = await ctx.health.check()
+    """Local container health only — never contacts Kavita or any other service."""
+    code, body = await ctx.health.local()
     return JSONResponse(body, status_code=code, headers={"Cache-Control": "no-store"})
 
 
@@ -82,5 +83,16 @@ async def admin_overview(_: AdminUser, settings: Settings, ctx: Ctx) -> dict[str
                 or (not url_key and await settings.is_set(secret_key or "")),
             }
         )
-    _, health = await ctx.health.check()
-    return {"version": __version__, "connections": connections, "health": health}
+    _, health = await ctx.health.local()
+    return {
+        "version": __version__,
+        "connections": connections,
+        "health": health,
+        "services": await ctx.health.services(),
+    }
+
+
+@router.get("/api/admin/services")
+async def admin_services(_: AdminUser, ctx: Ctx) -> dict[str, Any]:
+    """Reachability of external services (cached ~30s). Admin only: reveals topology."""
+    return await ctx.health.services()

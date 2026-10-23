@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import KAVITA, db_rows, do_setup
+from tests.conftest import KAVITA, db_rows, do_setup, setup_code
 
 
 def _login(client: TestClient, username: str, password: str):
@@ -14,19 +14,20 @@ def _login(client: TestClient, username: str, password: str):
 
 def test_setup_status_before_setup(client: TestClient) -> None:
     body = client.get("/api/setup/status").json()
-    assert body == {"completed": False, "kavita_url": "", "admin_role": "Admin"}
+    assert body == {"completed": False, "code_required": True, "admin_role": "Admin"}
     assert client.get("/api/system/info").json()["setup_completed"] is False
 
 
 def test_setup_kavita_test_button(client: TestClient, kavita) -> None:
-    r = client.post("/api/setup/kavita/test", json={"url": KAVITA})
+    code = setup_code(client)
+    r = client.post("/api/setup/kavita/test", json={"code": code, "url": KAVITA})
     assert r.json() == {"ok": True, "message": "Connected to Kavita."}
 
-    r = client.post("/api/setup/kavita/test", json={"url": "not a url"})
+    r = client.post("/api/setup/kavita/test", json={"code": code, "url": "not a url"})
     assert r.status_code == 422
 
     kavita.get("http://nothere.test/api/health").respond(404)
-    r = client.post("/api/setup/kavita/test", json={"url": "http://nothere.test"})
+    r = client.post("/api/setup/kavita/test", json={"code": code, "url": "http://nothere.test"})
     assert r.json()["ok"] is False
     assert "doesn't look like Kavita" in r.json()["message"]
 
@@ -39,7 +40,12 @@ def test_login_refused_before_setup(client: TestClient) -> None:
 def test_setup_requires_kavita_admin(client: TestClient) -> None:
     r = client.post(
         "/api/setup/complete",
-        json={"kavita_url": KAVITA, "username": "reader", "password": "readerpw"},
+        json={
+            "code": setup_code(client),
+            "kavita_url": KAVITA,
+            "username": "reader",
+            "password": "readerpw",
+        },
     )
     assert r.status_code == 403
     assert "isn't a Kavita 'Admin'" in r.json()["detail"]
@@ -52,14 +58,14 @@ def test_setup_completes_and_locks(client: TestClient, cfg) -> None:
     assert "wishpanel_session" in client.cookies
 
     assert client.get("/api/setup/status").json()["completed"] is True
-    assert client.get("/api/setup/status").json()["kavita_url"] == ""  # not exposed after setup
     # Locked: nobody can re-run setup to point WishPanel at a different Kavita.
     r = client.post(
         "/api/setup/complete",
-        json={"kavita_url": "http://evil.test", "username": "x", "password": "y"},
+        json={"code": "x", "kavita_url": "http://evil.test", "username": "x", "password": "y"},
     )
     assert r.status_code == 409
-    assert client.post("/api/setup/kavita/test", json={"url": KAVITA}).status_code == 409
+    r = client.post("/api/setup/kavita/test", json={"code": "x", "url": KAVITA})
+    assert r.status_code == 409
 
     actions = [r[0] for r in db_rows(cfg.db_path, "SELECT action FROM audit_log ORDER BY id")]
     assert actions[-2:] == ["auth.login", "setup.completed"]
@@ -146,8 +152,7 @@ def test_admin_overview_requires_admin(client: TestClient, setup_done) -> None:
     assert client.get("/api/admin/overview").status_code == 403
 
 
-def test_health_reports_kavita_after_setup(client: TestClient, setup_done) -> None:
-    body = client.get("/health").json()
-    assert body["status"] == "ok"
-    assert body["setup_completed"] is True
-    assert body["checks"]["kavita"]["status"] == "ok"
+def test_admin_services_reports_kavita_after_setup(client: TestClient, setup_done) -> None:
+    body = client.get("/api/admin/services").json()
+    assert body == {"status": "ok", "services": {"kavita": {"status": "ok"}}}
+    assert client.get("/health").json()["setup_completed"] is True

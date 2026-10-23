@@ -65,7 +65,7 @@ document.addEventListener("alpine:init", () => {
     adminPage: "overview",
     admin: null,
     creds: { username: "", password: "" },
-    setup: { step: 1, url: "", adminRole: "Admin", username: "", password: "", test: null },
+    setup: { step: 0, code: "", url: "", adminRole: "Admin", username: "", password: "", test: null },
     adminPages: ADMIN_PAGES,
 
     get visibleTabs() { return TABS.filter((t) => !t.admin || this.me?.is_admin); },
@@ -139,16 +139,33 @@ document.addEventListener("alpine:init", () => {
     // ---- first-run wizard ----
     async startSetup() {
       const s = await api("GET", "api/setup/status");
-      this.setup.url = s.kavita_url || "";
       this.setup.adminRole = s.admin_role;
+      this.setup.step = 0;
       this.view = "setup";
+      this.$nextTick(() => this.$refs.setupCode?.focus());
+    },
+
+    async setupClaim() {
+      this.busy = true; this.error = "";
+      try {
+        const r = await api("POST", "api/setup/claim", { code: this.setup.code });
+        if (r.kavita_url && !this.setup.url) this.setup.url = r.kavita_url;
+        this.setup.step = 1;
+      } catch (e) {
+        if (e.status === 409) return this.boot();
+        this.error = e.message;
+      } finally { this.busy = false; }
     },
 
     async setupTest() {
       this.busy = true; this.setup.test = null;
-      try { this.setup.test = await api("POST", "api/setup/kavita/test", { url: this.setup.url }); }
-      catch (e) { this.setup.test = { ok: false, message: e.message }; }
-      finally { this.busy = false; }
+      try {
+        this.setup.test = await api("POST", "api/setup/kavita/test",
+          { code: this.setup.code, url: this.setup.url });
+      } catch (e) {
+        if (e.status === 403 && /setup code/i.test(e.message)) { this.setup.step = 0; this.error = e.message; }
+        this.setup.test = { ok: false, message: e.message };
+      } finally { this.busy = false; }
       return this.setup.test.ok;
     },
 
@@ -160,9 +177,11 @@ document.addEventListener("alpine:init", () => {
       this.busy = true; this.error = "";
       try {
         const me = await api("POST", "api/setup/complete", {
-          kavita_url: this.setup.url, username: this.setup.username, password: this.setup.password,
+          code: this.setup.code, kavita_url: this.setup.url,
+          username: this.setup.username, password: this.setup.password,
         });
         this.setup.password = "";
+        this.setup.code = "";
         this.site.setup_completed = true;
         this.setMe(me);
         this.view = "app";

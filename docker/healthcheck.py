@@ -1,4 +1,4 @@
-"""Docker HEALTHCHECK: exit 0 if /health answers 200 (ok or degraded), else 1."""
+"""Docker HEALTHCHECK: exit 0 if the local-only /health answers 200, else 1."""
 
 import os
 import sys

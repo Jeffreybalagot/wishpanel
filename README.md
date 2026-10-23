@@ -8,7 +8,7 @@ Kavita account, find a title, and request it — WishPanel hands it to the right
 
 WishPanel never downloads anything itself; it's a thin, friendly orchestration layer.
 
-> **Status: Milestone 1 of 5 (skeleton).** Kavita sign-in, first-run setup, encrypted
+> **Status: Milestone 1.1 of 5 (hardened skeleton).** Kavita sign-in, first-run setup, encrypted
 > settings storage, health checks and the UI shell work today. Settings pages, requests,
 > discover and search arrive in Milestones 2–4. See [`SPEC.md`](SPEC.md) for the plan.
 
@@ -40,11 +40,14 @@ services:
     restart: unless-stopped
 ```
 
-Then open `http://<server>:5658` and follow the two-step setup:
+Then open `http://<server>:5658` and follow the three-step setup:
 
-1. **Kavita URL** — the address the WishPanel container can reach (e.g. `http://10.0.0.5:5000`).
+1. **Setup code** — a one-time code that proves you control the container. It's printed in the
+   container log (Unraid: Docker → wishpanel → Logs) and saved as `setup-code.txt` in the
+   appdata folder. It's deleted automatically once setup is done.
+2. **Kavita URL** — the address the WishPanel container can reach (e.g. `http://10.0.0.5:5000`).
    Use **Test connection** to check it.
-2. **Admin sign-in** — sign in with a Kavita account that has the `Admin` role. That account
+3. **Admin sign-in** — sign in with a Kavita account that has the `Admin` role. That account
    becomes the first WishPanel admin and setup locks.
 
 ### Unraid
@@ -81,13 +84,25 @@ Coming from v1? On the very first boot only, WishPanel imports `KAVITA_URL`, `KA
 | Path | What |
 |---|---|
 | `wishpanel.db` | SQLite database (settings, users, sessions, audit log) |
+| `setup-code.txt` | One-time setup code (only until setup is completed) |
 | `secret.key` | Encryption key for stored secrets. **Back it up with the database** — without it, saved API keys must be re-entered. |
 | `logs/wishpanel.log` | Structured JSON logs (rotated, 5 × 5 MB) — easy to ship to Loki |
 
 ## Health
 
-`GET /health` returns `ok`, `degraded` (WishPanel works but Kavita is unreachable — still HTTP 200)
-or `error` (database unavailable — HTTP 503). The image's `HEALTHCHECK` uses it.
+`GET /health` reports only on the container itself (database reachable, `/config` writable):
+`ok` → HTTP 200, `error` → HTTP 503. It never contacts Kavita or anything else, so an outage
+elsewhere can't get WishPanel marked unhealthy or restarted. The image's `HEALTHCHECK` uses it.
+
+Reachability of Kavita (and later Kapowarr, Suwayomi, …) is shown separately to admins on
+Admin → Overview, backed by the admin-only `GET /api/admin/services`.
+
+## Images
+
+`:edge` is built from `main`, `:latest` and `:X.Y.Z` from release tags, and every build also
+gets a digest. Both architectures are smoke-tested from the built archive before anything is
+pushed, and the pushed digest is verified to be the tested one. For reproducible deployments
+pin the digest shown in the workflow run summary: `ghcr.io/jeffreybalagot/wishpanel@sha256:…`.
 
 ## Reverse proxy
 
@@ -97,12 +112,16 @@ on HTTPS. For a sub-path, also set `BASE_URL`.
 
 ## Development
 
+Dependencies are locked in `uv.lock`; CI and the Docker image install exactly those versions.
+
 ```bash
-uv venv && uv pip install -e ".[dev]"
-uv run pytest            # tests
-uv run ruff check .      # lint
+uv sync --locked --extra dev   # create .venv from the lockfile
+uv run pytest                  # tests
+uv run ruff check .            # lint
 CONFIG_DIR=./.devconfig uv run python -m app   # http://localhost:8080
 ```
+
+After changing dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock`.
 
 Layout: `app/providers/` holds the provider interfaces (`base.py`) and implementations
 (Kavita today; Kapowarr, Suwayomi, ComicVine, AniList, MangaBaka, Comic Book Herald next).

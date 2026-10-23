@@ -1,0 +1,108 @@
+name: Image
+
+# Reusable: build -> smoke-test -> (optionally) publish, in that order, in one job.
+#
+# The image is built ONCE for both architectures into an OCI archive. Each
+# architecture is booted and smoke-tested from that archive. Only if every smoke
+# test passes are those exact bytes copied to GHCR (digests preserved), so the
+# published digest is the one that was tested.
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        required: true
+      tags:
+        description: docker/metadata-action tag rules
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+    outputs:
+      digest:
+        description: Digest of the published multi-arch image (empty when not published)
+        value: ${{ jobs.image.outputs.digest }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+    env:
+      ARCHIVE: /tmp/wishpanel-oci.tar
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=auto
+          tags: ${{ inputs.tags }}
+
+      - name: Build amd64 + arm64 into one OCI archive (nothing is pushed here)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          outputs: type=oci,dest=${{ env.ARCHIVE }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=${{ inputs.version }}
+            REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Ensure skopeo
+        run: command -v skopeo || { sudo apt-get update && sudo apt-get install -y skopeo; }
+
+      - name: Record built digest
+        id: built
+        run: |
+          digest="sha256:$(skopeo inspect --raw "oci-archive:$ARCHIVE" | sha256sum | cut -d' ' -f1)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Built image index: $digest"
+
+      - name: Smoke test amd64 (from the archive)
+        run: sh docker/smoke-test.sh "$ARCHIVE" amd64 5658
+
+      - name: Smoke test arm64 (from the archive, under QEMU)
+        run: sh docker/smoke-test.sh "$ARCHIVE" arm64 5659
+
+      - name: Publish the tested archive to GHCR
+        id: publish
+        if: inputs.publish
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          BUILT: ${{ steps.built.outputs.digest }}
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          echo "$GH_TOKEN" | skopeo login ghcr.io -u "$GH_ACTOR" --password-stdin
+          for tag in $TAGS; do
+            skopeo copy --all --preserve-digests "oci-archive:$ARCHIVE" "docker://$tag"
+            pushed="sha256:$(skopeo inspect --raw "docker://$tag" | sha256sum | cut -d' ' -f1)"
+            [ "$pushed" = "$BUILT" ] || { echo "digest mismatch for $tag: $pushed != $BUILT"; exit 1; }
+            echo "pushed $tag -> $pushed"
+          done
+          echo "digest=$BUILT" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Published image"
+            echo
+            echo "Digest (tested and published): \`$BUILT\`"
+            echo
+            for tag in $TAGS; do echo "- \`$tag\`"; done
+            echo
+            echo "Pin it reproducibly: \`ghcr.io/${GITHUB_REPOSITORY,,}@$BUILT\`"
+          } >> "$GITHUB_STEP_SUMMARY"

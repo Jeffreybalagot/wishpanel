@@ -7,7 +7,7 @@ import respx
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from tests.conftest import db_rows, make_cfg
+from tests.conftest import db_rows, make_cfg, setup_code
 
 
 def test_boots_with_empty_config(client: TestClient, cfg) -> None:
@@ -20,8 +20,7 @@ def test_boots_with_empty_config(client: TestClient, cfg) -> None:
     body = r.json()
     assert body["status"] == "ok"
     assert body["setup_completed"] is False
-    assert body["checks"]["database"]["status"] == "ok"
-    assert body["checks"]["kavita"]["status"] == "not_configured"
+    assert body["checks"] == {"database": {"status": "ok"}, "config": {"status": "ok"}}
 
 
 def test_migrations_create_tables_and_defaults(client: TestClient, cfg) -> None:
@@ -53,7 +52,8 @@ def test_legacy_env_imported_once_and_encrypted(tmp_path: Path, monkeypatch) -> 
         respx.mock(assert_all_called=False),
         TestClient(create_app(cfg, configure_logs=False)) as c,
     ):
-        assert c.get("/api/setup/status").json()["kavita_url"] == "http://old-kavita:5000"
+        r = c.post("/api/setup/claim", json={"code": setup_code(c)})
+        assert r.json()["kavita_url"] == "http://old-kavita:5000"
 
     [(raw, is_secret)] = db_rows(
         cfg.db_path, "SELECT value, is_secret FROM settings WHERE key='kapowarr.api_key'"
@@ -67,7 +67,8 @@ def test_legacy_env_imported_once_and_encrypted(tmp_path: Path, monkeypatch) -> 
         respx.mock(assert_all_called=False),
         TestClient(create_app(cfg, configure_logs=False)) as c,
     ):
-        assert c.get("/api/setup/status").json()["kavita_url"] == "http://old-kavita:5000"
+        r = c.post("/api/setup/claim", json={"code": setup_code(c)})
+        assert r.json()["kavita_url"] == "http://old-kavita:5000"
 
 
 def test_base_url_prefix(tmp_path: Path) -> None:

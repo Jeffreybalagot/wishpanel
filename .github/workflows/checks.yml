@@ -1,0 +1,42 @@
+name: Checks
+
+# Reusable: lint + tests, both installing exactly what uv.lock pins.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.11.32" # keep in sync with ARG UV_VERSION in docker/Dockerfile
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: uv.lock is up to date
+        run: uv lock --check
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+      - name: shellcheck
+        run: shellcheck docker/entrypoint.sh docker/smoke-test.sh
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync pytest -q

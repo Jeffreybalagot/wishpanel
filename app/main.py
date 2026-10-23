@@ -60,7 +60,7 @@ def create_app(cfg: BootstrapConfig | None = None, *, configure_logs: bool = Tru
         box = await asyncio.to_thread(bootstrap.prepare_filesystem, cfg)
         engine = create_engine(cfg.db_url_async)
         sessionmaker = create_sessionmaker(engine)
-        await bootstrap.seed(sessionmaker, box)
+        await bootstrap.seed(sessionmaker, box, cfg.config_dir)
         async with sessionmaker() as db:
             if purged := await purge_expired_sessions(db):
                 log.info("Purged expired sessions", extra={"count": purged})
@@ -74,7 +74,7 @@ def create_app(cfg: BootstrapConfig | None = None, *, configure_logs: bool = Tru
             box=box,
             http=http,
             throttle=LoginThrottle(),
-            health=HealthService(sessionmaker, box, http),
+            health=HealthService(sessionmaker, box, http, cfg.config_dir),
         )
         log.info("WishPanel ready", extra={"port": cfg.port})
         try:
