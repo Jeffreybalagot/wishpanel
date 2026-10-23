@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WishPanel</title>
+  <link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="static/app.css">
+  <script src="static/app.js" defer></script>
+  <script src="static/vendor/alpine-3.17.5.min.js" defer></script>
+</head>
+<body>
+<div id="app" x-data="wishpanel" x-cloak>
+
+  <!-- ============ Boot ============ -->
+  <div class="center-screen" x-show="view === 'boot'">
+    <div class="spinner" aria-label="Loading"></div>
+  </div>
+
+  <!-- ============ Unreachable ============ -->
+  <div class="center-screen" x-show="view === 'error'">
+    <div class="card narrow">
+      <h1 class="card-title">Can't reach WishPanel</h1>
+      <p class="muted" x-text="fatal"></p>
+      <button class="btn" @click="boot()">Try again</button>
+    </div>
+  </div>
+
+  <!-- ============ First-run setup ============ -->
+  <div class="center-screen" x-show="view === 'setup'">
+    <div class="card narrow">
+      <div class="brand brand-lg"><span class="logo" aria-hidden="true"></span><span>WishPanel</span></div>
+      <h1 class="card-title">Welcome — let's connect Kavita</h1>
+      <p class="muted">WishPanel signs people in with their Kavita accounts. Everything else
+        (Kapowarr, Suwayomi, ComicVine) is set up later in <strong>Admin → Settings</strong>.</p>
+
+      <ol class="steps">
+        <li :class="{ active: setup.step === 1, done: setup.step > 1 }">Kavita URL</li>
+        <li :class="{ active: setup.step === 2 }">Admin sign-in</li>
+      </ol>
+
+      <form x-show="setup.step === 1" @submit.prevent="setupNext()">
+        <label class="field">
+          <span>Kavita URL</span>
+          <input type="url" required placeholder="http://10.0.0.5:5000" x-model.trim="setup.url"
+                 autocomplete="url" autofocus>
+          <small class="muted">The address WishPanel's container can reach, including the port.</small>
+        </label>
+        <div class="notice" x-show="setup.test" :class="setup.test?.ok ? 'ok' : 'bad'"
+             x-text="setup.test?.message"></div>
+        <div class="row">
+          <button type="button" class="btn ghost" @click="setupTest()" :disabled="busy || !setup.url">
+            Test connection</button>
+          <button type="submit" class="btn" :disabled="busy || !setup.url">Next</button>
+        </div>
+      </form>
+
+      <form x-show="setup.step === 2" @submit.prevent="setupComplete()">
+        <p class="muted">Sign in with a Kavita account that has the
+          <strong x-text="setup.adminRole"></strong> role. It becomes the first WishPanel admin.</p>
+        <label class="field"><span>Kavita username</span>
+          <input required x-model="setup.username" autocomplete="username"></label>
+        <label class="field"><span>Password</span>
+          <input type="password" required x-model="setup.password" autocomplete="current-password"></label>
+        <div class="notice bad" x-show="error" x-text="error"></div>
+        <div class="row">
+          <button type="button" class="btn ghost" @click="setup.step = 1; error = ''">Back</button>
+          <button type="submit" class="btn" :disabled="busy">Finish setup</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Login ============ -->
+  <div class="center-screen" x-show="view === 'login'">
+    <form class="card narrow" @submit.prevent="login()">
+      <div class="brand brand-lg"><span class="logo" aria-hidden="true"></span>
+        <span x-text="site.site_name"></span></div>
+      <p class="muted">Sign in with your Kavita account.</p>
+      <label class="field"><span>Username</span>
+        <input required x-model="creds.username" autocomplete="username" x-ref="loginUser"></label>
+      <label class="field"><span>Password</span>
+        <input type="password" required x-model="creds.password" autocomplete="current-password"></label>
+      <div class="notice bad" x-show="error" x-text="error"></div>
+      <button type="submit" class="btn block" :disabled="busy">
+        <span x-show="!busy">Sign in</span><span x-show="busy">Signing in…</span></button>
+    </form>
+  </div>
+
+  <!-- ============ App shell ============ -->
+  <div class="shell" x-show="view === 'app'">
+    <header class="topbar">
+      <a class="brand" href="#/discover"><span class="logo" aria-hidden="true"></span>
+        <span x-text="site.site_name"></span></a>
+      <nav class="tabs" aria-label="Main">
+        <template x-for="t in visibleTabs" :key="t.id">
+          <a :href="'#/' + t.id" class="tab" :class="{ active: tab === t.id }"
+             :aria-current="tab === t.id ? 'page' : null" x-text="t.label"></a>
+        </template>
+      </nav>
+      <div class="user">
+        <span class="avatar" x-text="(me?.username || '?').slice(0,1).toUpperCase()"></span>
+        <span class="user-name" x-text="me?.username"></span>
+        <span class="pill" x-show="me?.is_admin">admin</span>
+        <button class="btn ghost sm" @click="logout()">Sign out</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- Discover -->
+      <section x-show="tab === 'discover'">
+        <h1 class="page-title">Discover</h1>
+        <template x-for="mt in enabledMediaTypes" :key="mt.id">
+          <div class="shelf">
+            <div class="shelf-head"><h2 x-text="mt.label"></h2>
+              <span class="muted sm">Shelves arrive in Milestone 4</span></div>
+            <div class="shelf-row">
+              <template x-for="i in 8" :key="i"><div class="cover skeleton"></div></template>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- Search -->
+      <section x-show="tab === 'search'">
+        <h1 class="page-title">Search</h1>
+        <div class="search">
+          <input type="search" placeholder="Search comics, manga and manhwa…" disabled>
+          <div class="seg">
+            <template x-for="mt in enabledMediaTypes" :key="mt.id">
+              <button class="seg-btn" disabled x-text="mt.label"></button></template>
+          </div>
+        </div>
+        <div class="empty"><p>Search is wired up in Milestone 4.</p></div>
+      </section>
+
+      <!-- Requests -->
+      <section x-show="tab === 'requests'">
+        <h1 class="page-title">Requests</h1>
+        <div class="empty">
+          <div class="empty-icon logo" aria-hidden="true"></div>
+          <p>No requests yet.</p>
+          <p class="muted sm">Requesting arrives in Milestone 3.</p>
+        </div>
+      </section>
+
+      <!-- Admin -->
+      <section x-show="tab === 'admin' && me?.is_admin" class="admin">
+        <aside class="admin-nav">
+          <template x-for="p in adminPages" :key="p.id">
+            <button class="admin-link" :class="{ active: adminPage === p.id }"
+                    @click="adminPage = p.id" x-text="p.label"></button>
+          </template>
+        </aside>
+        <div class="admin-body">
+          <template x-if="adminPage === 'overview'">
+            <div>
+              <h1 class="page-title">Overview</h1>
+              <div class="grid">
+                <div class="card">
+                  <h3>Health</h3>
+                  <p><span class="dot" :class="admin?.health?.status"></span>
+                    <span x-text="admin?.health?.status || '…'"></span></p>
+                  <template x-for="(c, name) in (admin?.health?.checks || {})" :key="name">
+                    <p class="sm"><span class="dot" :class="c.status"></span>
+                      <span class="cap" x-text="name"></span>:
+                      <span class="muted" x-text="c.message || c.status"></span></p>
+                  </template>
+                </div>
+                <div class="card">
+                  <h3>Version</h3>
+                  <p class="mono" x-text="admin?.version"></p>
+                </div>
+              </div>
+              <h2 class="section-title">Connections</h2>
+              <table class="table">
+                <thead><tr><th>Service</th><th>URL</th><th>Key</th><th>Status</th></tr></thead>
+                <tbody>
+                  <template x-for="c in (admin?.connections || [])" :key="c.name">
+                    <tr>
+                      <td x-text="c.name"></td>
+                      <td class="mono sm" x-text="c.url || '—'"></td>
+                      <td class="mono sm" x-text="c.secret || '—'"></td>
+                      <td><span class="pill" :class="c.configured ? 'ok' : ''"
+                                x-text="c.configured ? 'configured' : 'not set'"></span></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+              <p class="muted sm">Editing these connections, with Test buttons and live dropdowns,
+                is Milestone 2.</p>
+            </div>
+          </template>
+          <template x-if="adminPage !== 'overview'">
+            <div>
+              <h1 class="page-title" x-text="adminPages.find(p => p.id === adminPage)?.label"></h1>
+              <div class="empty"><p>This settings page is built in Milestone 2.</p></div>
+            </div>
+          </template>
+        </div>
+      </section>
+    </main>
+    <footer class="footer muted sm">WishPanel <span x-text="site.version"></span></footer>
+  </div>
+</div>
+</body>
+</html>

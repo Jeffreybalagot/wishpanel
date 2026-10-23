@@ -1,0 +1,25 @@
+# WishPanel — example compose file.
+# Runs side-by-side with any existing Comic Requests v1 container: different
+# container name, different host port (5658), different appdata folder.
+services:
+  wishpanel:
+    # :latest = tagged releases. Use :edge for builds of the main branch.
+    image: ghcr.io/jeffreybalagot/wishpanel:latest
+    container_name: wishpanel
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=America/Los_Angeles
+      # Optional:
+      # - UMASK=022
+      # - LOG_LEVEL=info
+      # - BASE_URL=/wishpanel          # only if served under a sub-path by your reverse proxy
+      # - FORWARDED_ALLOW_IPS=10.0.0.2 # your reverse proxy's IP, so real client IPs are logged
+    volumes:
+      - /mnt/user/appdata/wishpanel:/config
+      # Optional read-only library mounts for "In library" folder checks (later milestones)
+      # - /mnt/user/media/comics:/comics:ro
+      # - /mnt/user/media/manga:/manga:ro
+    ports:
+      - "5658:8080"
+    restart: unless-stopped

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!-- DRAFT Community Applications template (finalised in Milestone 5). -->
+<Container version="2">
+  <Name>wishpanel</Name>
+  <Repository>ghcr.io/jeffreybalagot/wishpanel:latest</Repository>
+  <Registry>https://github.com/Jeffreybalagot/wishpanel/pkgs/container/wishpanel</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Jeffreybalagot/wishpanel/issues</Support>
+  <Project>https://github.com/Jeffreybalagot/wishpanel</Project>
+  <Overview>Ombi-style request portal for comics, manga and manhwa. Users sign in with Kavita, request titles, and WishPanel sends them to Kapowarr (comics) or Suwayomi (manga/manhwa). All configuration — URLs, API keys, options — is done in the web UI after first start; nothing goes in this template.</Overview>
+  <Category>MediaServer:Books MediaApp:Books Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Jeffreybalagot/wishpanel/main/unraid/wishpanel.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Jeffreybalagot/wishpanel/main/app/web/static/favicon.svg</Icon>
+  <Shell>sh</Shell>
+  <Config Name="WebUI Port" Target="8080" Default="5658" Mode="tcp" Description="Port for the web interface" Type="Port" Display="always" Required="true" Mask="false">5658</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/wishpanel" Mode="rw" Description="Database, encryption key and logs" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/wishpanel</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Description="User ID to run as" Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Description="Group ID to run as" Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
+  <Config Name="UMASK" Target="UMASK" Default="022" Description="File creation mask" Type="Variable" Display="advanced" Required="false" Mask="false">022</Config>
+  <Config Name="TZ" Target="TZ" Default="America/Los_Angeles" Description="Time zone" Type="Variable" Display="advanced" Required="false" Mask="false">America/Los_Angeles</Config>
+  <Config Name="BASE_URL" Target="BASE_URL" Default="" Description="Optional sub-path when behind a reverse proxy, e.g. /wishpanel" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="FORWARDED_ALLOW_IPS" Target="FORWARDED_ALLOW_IPS" Default="127.0.0.1" Description="Optional: your reverse proxy's IP, so real client IPs and HTTPS are detected" Type="Variable" Display="advanced" Required="false" Mask="false">127.0.0.1</Config>
+</Container>
