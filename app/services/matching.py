@@ -121,6 +121,29 @@ class MatchWorker:
             if row is None:
                 self.current = None
                 return 600
+            # Same title already matched under another year hint: reuse, no API call.
+            twin = await db.scalar(
+                select(MatchCache)
+                .where(
+                    MatchCache.key.startswith(row.key.split("|")[0] + "|"),
+                    MatchCache.status == "ok",
+                )
+                .limit(1)
+            )
+            if twin is not None:
+                for attr in (
+                    "comicvine_id",
+                    "name",
+                    "year",
+                    "publisher",
+                    "issues",
+                    "cover_url",
+                    "score",
+                ):
+                    setattr(row, attr, getattr(twin, attr))
+                row.status, row.updated_at = "ok", utcnow()
+                await db.commit()
+                return 0.05
             try:
                 provider = await catalog.comic_provider(settings, self.ctx.http)
             except ProviderError as exc:

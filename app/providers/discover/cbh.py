@@ -31,7 +31,7 @@ POPULAR_SLUG = "35-most-popular-comics-2020s-right-now"
 class ListDef:
     id: str
     title: str
-    slug: str | None = None  # exact slug (last path segment)
+    slug: str | None = None  # exact slug (last path segment); "a|b" tries both
     search: str | None = None  # WordPress search, newest matching post wins
     title_re: str | None = None  # the search result's title must match this
     section: str | None = None  # H2/H3 heading on the page whose picks to take
@@ -60,14 +60,12 @@ def _year_lists() -> list[ListDef]:
         ListDef(
             "cbh-best-this-year",
             f"Best Comics of {this}",
-            search=f"Best Comics of {this}",
-            title_re=rf"best comics of {this}",
+            slug=f"the-best-comics-of-{this}|best-comics-of-{this}",
         ),
         ListDef(
             "cbh-best-last-year",
             f"Best Comics of {this - 1}",
-            search=f"Best Comics of {this - 1}",
-            title_re=rf"best comics of {this - 1}",
+            slug=f"the-best-comics-of-{this - 1}|best-comics-of-{this - 1}",
         ),
     ]
 
@@ -89,20 +87,17 @@ LISTS: tuple[ListDef, ...] = (
     ListDef(
         "cbh-decade-marvel",
         "Best Marvel Comics of the Decade",
-        search="Best Marvel Comics of the 2020s",
-        title_re=r"best marvel.*20[0-9]0s",
+        slug="best-marvel-comics-of-the-decade-2020",
     ),
     ListDef(
         "cbh-decade-dc",
         "Best DC Comics of the Decade",
-        search="Best DC Comics of the 2020s",
-        title_re=r"best dc.*20[0-9]0s",
+        slug="best-dc-comics-of-the-decade-2020",
     ),
     ListDef(
         "cbh-decade-image",
         "Best Image Comics of the Decade",
-        search="Best Image Comics of the 2020s",
-        title_re=r"best image.*20[0-9]0s",
+        slug="best-image-comics-of-the-decade-2020",
     ),
     ListDef(
         "cbh-decade-gn",
@@ -283,10 +278,13 @@ class ComicBookHeraldSource:
     async def fetch(self, d: ListDef) -> tuple[str | None, str]:
         """(source URL, HTML) for a list definition."""
         posts: list[dict[str, Any]] = []
-        if d.slug:
-            posts = await self._wp("posts", {"slug": d.slug})
-            if not posts:
-                posts = await self._wp("pages", {"slug": d.slug})
+        if d.slug:  # "a|b" = try alternatives in order
+            for slug in d.slug.split("|"):
+                posts = await self._wp("posts", {"slug": slug}) or await self._wp(
+                    "pages", {"slug": slug}
+                )
+                if posts:
+                    break
         elif d.search:
             found = await self._wp("posts", {"search": d.search, "per_page": 10, "orderby": "date"})
             pattern = re.compile(d.title_re or re.escape(d.search), re.I)
