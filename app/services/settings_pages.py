@@ -40,6 +40,8 @@ class Field:
     labels: dict[str, str] = field(default_factory=dict)
     # Show only when another field has one of these values, e.g. ("suwayomi.auth_mode", ("basic",))
     show_if: tuple[str, tuple[str, ...]] | None = None
+    # source-list: allow typing entries that aren't in the options list
+    free: bool = False
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,58 @@ PAGES: tuple[Page, ...] = (
                 "Auto marks cookies Secure when the request arrived over HTTPS "
                 "(including via a trusted reverse proxy).",
                 labels={"auto": "Auto", "always": "Always (HTTPS only)", "never": "Never"},
+            ),
+        ),
+    ),
+    Page(
+        "media-types",
+        "Media Types",
+        "Turn comics, manga and manhwa on or off, and choose what serves each one. "
+        "Kavita libraries are mapped on the Library — Kavita page.",
+        (
+            Field("media.comic.enabled", "Comics", "toggle"),
+            Field(
+                "media.comic.metadata",
+                "Comic search uses",
+                "select",
+                "Kapowarr can search with its own ComicVine key if you don't want to add one here.",
+                labels={
+                    "comicvine": "ComicVine (direct)",
+                    "kapowarr": "Kapowarr's ComicVine search",
+                },
+            ),
+            Field(
+                "media.comic.downloader",
+                "Comics download with",
+                "select",
+                labels={"kapowarr": "Kapowarr"},
+            ),
+            Field("media.manga.enabled", "Manga", "toggle"),
+            Field(
+                "media.manga.metadata",
+                "Manga search uses",
+                "select",
+                "MangaBaka is used when AniList is off or unavailable.",
+                labels={"anilist": "AniList (+ MangaBaka)"},
+            ),
+            Field(
+                "media.manga.downloader",
+                "Manga download with",
+                "select",
+                labels={"suwayomi": "Suwayomi"},
+            ),
+            Field("media.manhwa.enabled", "Manhwa", "toggle"),
+            Field(
+                "media.manhwa.metadata",
+                "Manhwa search uses",
+                "select",
+                labels={"anilist": "AniList (+ MangaBaka)"},
+            ),
+            Field(
+                "media.manhwa.downloader",
+                "Manhwa download with",
+                "select",
+                labels={"suwayomi": "Suwayomi"},
             ),
         ),
     ),
@@ -270,6 +324,204 @@ PAGES: tuple[Page, ...] = (
             ),
         ),
         connection="comicvine",
+    ),
+    Page(
+        "anilist",
+        "Metadata — AniList / MangaBaka",
+        "Manga and manhwa search and Discover shelves. Neither service needs an API key.",
+        (
+            Field(
+                "anilist.enabled",
+                "Use AniList",
+                "toggle",
+                "Search, details and the Trending/Popular shelves.",
+            ),
+            Field(
+                "anilist.exclude_adult",
+                "Hide adult titles",
+                "toggle",
+                show_if=("anilist.enabled", ("true",)),
+            ),
+            Field(
+                "anilist.country.JP",
+                "Titles from Japan are",
+                "select",
+                show_if=("anilist.enabled", ("true",)),
+                labels={"manga": "Manga", "manhwa": "Manhwa", "skip": "Hidden"},
+            ),
+            Field(
+                "anilist.country.KR",
+                "Titles from Korea are",
+                "select",
+                show_if=("anilist.enabled", ("true",)),
+                labels={"manga": "Manga", "manhwa": "Manhwa", "skip": "Hidden"},
+            ),
+            Field(
+                "anilist.country.CN",
+                "Titles from China (manhua) are",
+                "select",
+                show_if=("anilist.enabled", ("true",)),
+                labels={"manga": "Manga", "manhwa": "Manhwa", "skip": "Hidden"},
+            ),
+            Field(
+                "anilist.country.TW",
+                "Titles from Taiwan are",
+                "select",
+                show_if=("anilist.enabled", ("true",)),
+                labels={"manga": "Manga", "manhwa": "Manhwa", "skip": "Hidden"},
+            ),
+            Field(
+                "mangabaka.enabled",
+                "Use MangaBaka",
+                "toggle",
+                "The Completed and Highest Rated shelves, and search fallback.",
+            ),
+            Field(
+                "mangabaka.content_ratings",
+                "MangaBaka content ratings",
+                "tags",
+                "One per line: safe, suggestive, erotica. Pornographic is always excluded.",
+                show_if=("mangabaka.enabled", ("true",)),
+            ),
+        ),
+        connection="manga-metadata",
+    ),
+    Page(
+        "discover",
+        "Discover",
+        "Which shelves appear, in what order, and how fast comic lists are matched to ComicVine.",
+        (
+            Field("discover.items_per_row", "Titles per shelf", "number"),
+            Field(
+                "discover.comic.rows",
+                "Comic shelves",
+                "source-list",
+                "Lists from Comic Book Herald. None selected = all, in this order.",
+                options="discover.comic_rows",
+            ),
+            Field(
+                "discover.characters",
+                "Character & team shelves (comics)",
+                "source-list",
+                "Reading orders from Comic Book Herald, with ComicVine as the fallback. "
+                "You can add any character name.",
+                options="discover.characters",
+                free=True,
+            ),
+            Field(
+                "discover.manga.rows",
+                "Manga shelves",
+                "source-list",
+                "None selected = all.",
+                options="discover.manga_rows",
+            ),
+            Field(
+                "discover.manhwa.rows",
+                "Manhwa shelves",
+                "source-list",
+                "None selected = all.",
+                options="discover.manhwa_rows",
+            ),
+            Field(
+                "discover.match_interval_seconds",
+                "Seconds between ComicVine lookups",
+                "number",
+                "Matching list titles to ComicVine runs in the background at this pace "
+                "(ComicVine allows about 200 searches an hour).",
+            ),
+        ),
+        actions=("discover.refresh",),
+    ),
+    Page(
+        "requests",
+        "Requests",
+        "Limits, approval and how progress is judged.",
+        (
+            Field(
+                "requests.daily_limit",
+                "Requests per person per day",
+                "number",
+                "Rolling 24 hours; 0 = nobody can request. Per-user limits are on the Users page.",
+            ),
+            Field("requests.admins_unlimited", "Admins have no limit", "toggle"),
+            Field(
+                "requests.auto_approve",
+                "Approve requests automatically",
+                "toggle",
+                "Off = requests wait in the queue for an admin. Can be overridden per user.",
+            ),
+            Field(
+                "requests.allow_rerequest_failed",
+                "Allow requesting again after failed/denied",
+                "toggle",
+            ),
+            Field(
+                "requests.source_match_percent",
+                "Suwayomi match threshold (%)",
+                "number",
+                "How closely a source's title must match before it's added. 85 is a good start.",
+            ),
+            Field(
+                "requests.retry_hours",
+                "Search Suwayomi again after (hours)",
+                "number",
+                "For titles none of your sources have yet.",
+            ),
+            Field(
+                "requests.partial_min_expected",
+                "Partial: only for series with at least … chapters/issues",
+                "number",
+            ),
+            Field(
+                "requests.partial_have_percent",
+                "Partial: when fewer than …% are downloaded",
+                "number",
+            ),
+            Field("requests.partial_min_gap", "Partial: and at least … are missing", "number"),
+        ),
+    ),
+    Page(
+        "jobs",
+        "Jobs",
+        "Background tasks. Schedules apply immediately.",
+        (
+            Field("jobs.discover_comic.enabled", "Discover refresh — comics", "toggle"),
+            Field(
+                "jobs.discover_comic.hours",
+                "…every (hours)",
+                "number",
+                show_if=("jobs.discover_comic.enabled", ("true",)),
+            ),
+            Field("jobs.discover_manga.enabled", "Discover refresh — manga & manhwa", "toggle"),
+            Field(
+                "jobs.discover_manga.hours",
+                "…every (hours)",
+                "number",
+                show_if=("jobs.discover_manga.enabled", ("true",)),
+            ),
+            Field("jobs.retry.enabled", "Not-found retry", "toggle"),
+            Field(
+                "jobs.retry.hours",
+                "…every (hours)",
+                "number",
+                show_if=("jobs.retry.enabled", ("true",)),
+            ),
+            Field("jobs.availability.enabled", "Availability sync", "toggle"),
+            Field(
+                "jobs.availability.hours",
+                "…every (hours)",
+                "number",
+                show_if=("jobs.availability.enabled", ("true",)),
+            ),
+            Field("jobs.library_scan.enabled", "Kavita library scan", "toggle"),
+            Field(
+                "jobs.library_scan.hours",
+                "…every (hours)",
+                "number",
+                show_if=("jobs.library_scan.enabled", ("true",)),
+            ),
+        ),
+        actions=("jobs.table",),
     ),
 )
 

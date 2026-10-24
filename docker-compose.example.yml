@@ -17,9 +17,9 @@ services:
       # - FORWARDED_ALLOW_IPS=10.0.0.2 # your reverse proxy's IP, so real client IPs are logged
     volumes:
       - /mnt/user/appdata/wishpanel:/config
-      # Optional read-only library mounts for "In library" folder checks (later milestones)
-      # - /mnt/user/media/comics:/comics:ro
-      # - /mnt/user/media/manga:/manga:ro
+      # Optional, read-only: Comic Requests v1's data folder, for the one-time importer
+      # (Admin → Logs & About → Import from v1). Remove after importing.
+      # - /mnt/user/appdata/comicrequests/data:/import:ro
     ports:
       - "5658:8080"
     restart: unless-stopped

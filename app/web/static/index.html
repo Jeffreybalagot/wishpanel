@@ -126,40 +126,153 @@
     </header>
 
     <main class="content">
+      <!-- Media switcher shared by Discover and Search -->
+      <template x-if="tab === 'discover' || tab === 'search'">
+        <div class="page-head">
+          <h1 class="page-title" x-text="tab === 'discover' ? 'Discover' : 'Search'"></h1>
+          <div class="seg" role="tablist">
+            <template x-for="mt in enabledMediaTypes" :key="mt.id">
+              <button class="seg-btn" role="tab" :class="{ active: media === mt.id }" :aria-selected="media === mt.id"
+                      @click="setMedia(mt.id)" x-text="mt.label"></button></template>
+          </div>
+        </div>
+      </template>
+
       <!-- Discover -->
       <section x-show="tab === 'discover'">
-        <h1 class="page-title">Discover</h1>
-        <template x-for="mt in enabledMediaTypes" :key="mt.id">
+        <div class="empty" x-show="!enabledMediaTypes.length"><p>No media types are enabled. An admin can turn them on in Admin → Media Types.</p></div>
+        <div class="notice bad" x-show="rows[media]?.error" x-text="rows[media]?.error"></div>
+        <template x-if="rows[media]?.loading && !currentRows.length">
+          <div class="shelf"><div class="shelf-row"><template x-for="i in 8" :key="i"><div class="cover skeleton"></div></template></div></div>
+        </template>
+        <template x-for="row in visibleRows" :key="row.id">
           <div class="shelf">
-            <div class="shelf-head"><h2 x-text="mt.label"></h2>
-              <span class="muted sm">Shelves arrive in Milestone 4</span></div>
-            <div class="shelf-row">
-              <template x-for="i in 8" :key="i"><div class="cover skeleton"></div></template>
+            <div class="shelf-head">
+              <h2 x-text="row.title"></h2>
+              <span class="muted sm" x-show="row.pending" x-text="'matching ' + row.pending + ' more…'"></span>
+              <a class="muted sm link" x-show="row.source_url" :href="row.source_url" target="_blank" rel="noopener noreferrer">source ↗</a>
             </div>
+            <div class="shelf-row">
+              <template x-for="item in row.items" :key="item.key">
+                <button class="card-item" @click="openItem(item)" :title="item.title">
+                  <div class="cover">
+                    <img @error="$el.style.display='none'" x-show="item.cover_url" :src="item.cover_url" alt="" loading="lazy" referrerpolicy="no-referrer">
+                    <span class="badge" x-show="badgeFor(item)" :class="badgeFor(item)?.tone" x-text="badgeFor(item)?.label"></span>
+                  </div>
+                  <div class="card-title" x-text="item.title"></div>
+                  <div class="card-sub muted" x-text="[item.year, item.publisher].filter(Boolean).join(' · ')"></div>
+                </button>
+              </template>
+              <template x-if="!row.items.length">
+                <div class="muted sm shelf-wait">Matching titles to ComicVine in the background — this shelf fills in over the next minutes.</div>
+              </template>
+            </div>
+          </div>
+        </template>
+        <template x-if="!rows[media]?.loading && media && !visibleRows.length && !rows[media]?.error">
+          <div class="empty">
+            <div class="empty-icon logo" aria-hidden="true"></div>
+            <p>No shelves yet.</p>
+            <p class="muted sm">Discover lists refresh in the background (the first run starts about a minute after WishPanel starts).</p>
+            <button class="btn ghost sm" x-show="me?.is_admin" @click="refreshDiscoverNow(media)">Refresh now</button>
           </div>
         </template>
       </section>
 
       <!-- Search -->
       <section x-show="tab === 'search'">
-        <h1 class="page-title">Search</h1>
-        <div class="search">
-          <input type="search" placeholder="Search comics, manga and manhwa…" disabled>
-          <div class="seg">
-            <template x-for="mt in enabledMediaTypes" :key="mt.id">
-              <button class="seg-btn" disabled x-text="mt.label"></button></template>
-          </div>
+        <form class="search" @submit.prevent="runSearch()">
+          <input type="search" x-ref="searchBox" x-model="q" maxlength="120"
+                 :placeholder="'Search ' + (mediaLabel(media) || '').toLowerCase() + '…'" aria-label="Search">
+          <button class="btn" :disabled="searching || !q.trim()" x-text="searching ? 'Searching…' : 'Search'"></button>
+        </form>
+        <div class="notice bad" x-show="searchError" x-text="searchError"></div>
+        <div class="grid-covers" x-show="results.length">
+          <template x-for="item in results" :key="item.key">
+            <button class="card-item" @click="openItem(item)" :title="item.title">
+              <div class="cover">
+                <img @error="$el.style.display='none'" x-show="item.cover_url" :src="item.cover_url" alt="" loading="lazy" referrerpolicy="no-referrer">
+                <span class="badge" x-show="badgeFor(item)" :class="badgeFor(item)?.tone" x-text="badgeFor(item)?.label"></span>
+              </div>
+              <div class="card-title" x-text="item.title"></div>
+              <div class="card-sub muted" x-text="[item.year, item.publisher, item.issue_count ? item.issue_count + ' ' + unitFor(item.media_type) : ''].filter(Boolean).join(' · ')"></div>
+            </button>
+          </template>
         </div>
-        <div class="empty"><p>Search is wired up in Milestone 4.</p></div>
+        <div class="empty" x-show="!searching && searched && !results.length && !searchError">
+          <p>Nothing found for “<span x-text="searched"></span>”.</p>
+          <p class="muted sm">Try the original title, or fewer words.</p>
+        </div>
       </section>
 
       <!-- Requests -->
       <section x-show="tab === 'requests'">
-        <h1 class="page-title">Requests</h1>
-        <div class="empty">
+        <div class="page-head">
+          <h1 class="page-title">Requests</h1>
+          <div class="seg" x-show="me?.is_admin">
+            <button class="seg-btn" :class="{ active: reqs.scope === 'mine' }" @click="setReqScope('mine')">Mine</button>
+            <button class="seg-btn" :class="{ active: reqs.scope === 'all' }" @click="setReqScope('all')">Everyone</button>
+          </div>
+        </div>
+        <div class="toolbar">
+          <div class="chips">
+            <template x-for="f in requestFilters" :key="f.id">
+              <button class="chip" :class="{ active: reqs.status === f.id }" @click="setReqStatus(f.id)">
+                <span x-text="f.label"></span> <span class="chip-n" x-text="countFor(f.id)"></span></button>
+            </template>
+          </div>
+          <div class="row">
+            <select x-model="reqs.media" @change="loadRequests()" class="narrow-input" aria-label="Media type">
+              <option value="">All media</option>
+              <template x-for="m in enabledMediaTypes" :key="m.id"><option :value="m.id" x-text="m.label"></option></template>
+            </select>
+            <input type="search" x-model="reqs.q" @input.debounce.400ms="loadRequests()" placeholder="Filter by title or user…" class="narrow-input">
+          </div>
+        </div>
+        <div class="notice bad" x-show="reqs.error" x-text="reqs.error"></div>
+        <div class="req-list">
+          <template x-for="r in reqs.list" :key="r.id">
+            <div class="req">
+              <div class="req-cover"><img @error="$el.style.display='none'" x-show="r.cover_url" :src="r.cover_url" alt="" loading="lazy" referrerpolicy="no-referrer"></div>
+              <div class="req-main">
+                <div class="req-title">
+                  <span x-text="r.title"></span>
+                  <span class="muted sm" x-text="[mediaLabel(r.media_type), r.year].filter(Boolean).join(' · ')"></span>
+                </div>
+                <div class="req-meta sm">
+                  <span class="pill" :class="statusTone[r.status]" x-text="statusLabel[r.status] || r.status"></span>
+                  <span x-show="r.progress" x-text="r.progress"></span>
+                  <span class="muted" x-show="r.source_name" x-text="'via ' + r.source_name"></span>
+                  <span class="muted" x-show="reqs.scope === 'all'" x-text="'by ' + (r.username || 'unknown')"></span>
+                  <span class="muted" x-text="ago(r.created_at)"></span>
+                  <span class="pill" x-show="r.imported_from" x-text="'from ' + r.imported_from"></span>
+                </div>
+                <div class="req-msg sm muted" x-show="r.status_message" x-text="r.status_message"></div>
+                <div class="sm" :class="reqMsg[r.id]?.ok === false ? 'error-text' : 'muted'" x-show="reqMsg[r.id]"
+                     x-text="reqMsg[r.id]?.busy ? 'Working…' : reqMsg[r.id]?.message"></div>
+              </div>
+              <div class="req-actions">
+                <template x-if="me?.is_admin">
+                  <div class="row wrap">
+                    <button class="btn sm" x-show="r.status === 'pending' || r.status === 'denied'" @click="reqAction(r, 'approve')">Approve</button>
+                    <button class="btn ghost sm" x-show="r.status === 'pending'" @click="denyPrompt(r)">Deny</button>
+                    <button class="btn ghost sm" x-show="['failed','waiting_for_source','waiting_for_downloader','approved'].includes(r.status)" @click="reqAction(r, 'retry')">Retry</button>
+                    <button class="btn ghost sm" x-show="r.downloader_ref && ['added','downloading','partial','in_library'].includes(r.status)" @click="reqAction(r, 'refresh')">Refresh</button>
+                    <button class="btn ghost sm" x-show="r.media_type !== 'comic' && r.status !== 'pending'" @click="openPicker(r)">Choose source…</button>
+                    <button class="btn ghost sm danger" @click="confirmDelete(r)">Remove</button>
+                  </div>
+                </template>
+                <template x-if="!me?.is_admin && canCancel(r)">
+                  <button class="btn ghost sm" @click="confirmDelete(r)" x-text="r.status === 'pending' ? 'Cancel' : 'Remove'"></button>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+        <div class="empty" x-show="!reqs.loading && !reqs.list.length && !reqs.error">
           <div class="empty-icon logo" aria-hidden="true"></div>
-          <p>No requests yet.</p>
-          <p class="muted sm">Requesting arrives in Milestone 3.</p>
+          <p x-text="reqs.status ? 'Nothing here.' : 'No requests yet.'"></p>
+          <p class="muted sm">Find something on <a class="link" href="#/discover">Discover</a> or <a class="link" href="#/search">Search</a> and press Request.</p>
         </div>
       </section>
 
@@ -167,7 +280,7 @@
       <section x-show="tab === 'admin' && me?.is_admin" class="admin">
         <aside class="admin-nav">
           <template x-for="p in adminNav" :key="p.id">
-            <a class="admin-link" :href="p.id === 'overview' ? '#/admin' : '#/admin/' + p.id"
+            <a class="admin-link" :href="p.href || (p.id === 'overview' ? '#/admin' : '#/admin/' + p.id)"
                :class="{ active: adminPage === p.id, later: p.milestone }">
               <span x-text="p.label"></span>
               <span class="dirty-dot" x-show="p.schema && schema.length && pageDirty(p.id)" title="Unsaved changes"></span>
@@ -202,8 +315,17 @@
                   </template>
                 </div>
                 <div class="card">
+                  <h3>Requests</h3>
+                  <template x-for="(n, st) in (admin?.requests || {})" :key="st">
+                    <p class="sm"><span class="pill" :class="statusTone[st]" x-text="statusLabel[st] || st"></span> <span x-text="n"></span></p>
+                  </template>
+                  <p class="sm muted" x-show="!Object.keys(admin?.requests || {}).length">No requests yet.</p>
+                  <a class="link sm" href="#/requests/all">Open the request queue →</a>
+                </div>
+                <div class="card">
                   <h3>Version</h3>
                   <p class="mono" x-text="admin?.version"></p>
+                  <a class="link sm" href="#/admin/logs">Logs &amp; About →</a>
                 </div>
               </div>
               <h2 class="section-title">Connections</h2>
@@ -337,7 +459,8 @@
                                 <button type="button" class="icon-btn" title="Remove" @click="removeSource(f, id)">✕</button>
                               </li>
                             </template>
-                            <li class="muted sm" x-show="!selectedSources(f).length">None selected — WishPanel will refuse manga requests until you pick at least one.</li>
+                            <li class="muted sm" x-show="!selectedSources(f).length"
+                                x-text="f.key === 'suwayomi.sources' ? 'None selected — manga requests will wait until you pick at least one.' : 'None selected — all of them are used, in the default order.'"></li>
                           </ol>
                         </div>
                         <div class="sources-col">
@@ -346,13 +469,15 @@
                             <button type="button" class="btn ghost sm" @click="loadOptions(f.options)"
                                     x-text="opts[f.options]?.loading ? 'Loading…' : (optionsFor(f).length ? 'Refresh' : 'Load sources')"></button>
                           </div>
-                          <input type="search" placeholder="Filter…" x-model="sourceFilter" class="sources-filter">
+                          <input type="search" placeholder="Filter…" x-model="sourceFilter" class="sources-filter"
+                                 @keydown.enter.prevent="f.free && sourceFilter.trim() && (addSource(f, sourceFilter), sourceFilter = '')">
+                          <small class="muted" x-show="f.free">Not listed? Type a name and press Enter.</small>
                           <small class="error-text" x-show="opts[f.options] && !opts[f.options].ok" x-text="opts[f.options]?.message"></small>
                           <ul class="source-list available">
                             <template x-for="o in availableSources(f)" :key="o.value">
                               <li>
                                 <span class="grow" x-text="o.label"></span>
-                                <span class="pill" x-text="o.hint"></span>
+                                <span class="pill" x-show="o.hint" x-text="o.hint"></span>
                                 <button type="button" class="icon-btn add" title="Add" @click="addSource(f, o.value)">＋</button>
                               </li>
                             </template>
@@ -384,6 +509,76 @@
                 </div>
               </template>
 
+              <!-- Discover page extras -->
+              <template x-if="page.actions.includes('discover.refresh')">
+                <div class="panel">
+                  <div class="row wrap">
+                    <button type="button" class="btn ghost sm" @click="refreshDiscoverNow('comic')">Refresh comic lists now</button>
+                    <button type="button" class="btn ghost sm" @click="refreshDiscoverNow('manga')">Refresh manga &amp; manhwa now</button>
+                    <button type="button" class="btn ghost sm" @click="rematch()" x-show="discoverStatus?.match?.miss">Retry unmatched titles</button>
+                    <button type="button" class="btn ghost sm" @click="loadDiscoverStatus()">Reload status</button>
+                  </div>
+                  <p class="sm muted" x-show="discoverStatus">
+                    ComicVine matching: <strong x-text="discoverStatus?.match?.ok"></strong> matched,
+                    <strong x-text="discoverStatus?.match?.pending"></strong> waiting,
+                    <strong x-text="discoverStatus?.match?.miss"></strong> not found.
+                    Save your changes, then refresh to apply new shelves.</p>
+                  <div class="table-wrap" x-show="discoverStatus?.rows?.length">
+                    <table class="table compact">
+                      <thead><tr><th>Shelf</th><th>Media</th><th>Titles</th><th>Refreshed</th><th>Problem</th></tr></thead>
+                      <tbody>
+                        <template x-for="r in discoverStatus?.rows || []" :key="r.id">
+                          <tr>
+                            <td><a class="link" x-show="r.source_url" :href="r.source_url" target="_blank" rel="noopener noreferrer" x-text="r.title"></a>
+                                <span x-show="!r.source_url" x-text="r.title"></span></td>
+                            <td class="cap" x-text="r.media_type"></td>
+                            <td x-text="r.items"></td>
+                            <td class="sm" x-text="ago(r.refreshed_at)"></td>
+                            <td class="sm error-text" x-text="r.error || ''"></td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Jobs table -->
+              <template x-if="page.actions.includes('jobs.table')">
+                <div class="panel">
+                  <div class="notice" x-show="jobs && !jobs.background">Background jobs are disabled in this container (BACKGROUND_JOBS=0) — use Run now.</div>
+                  <div class="table-wrap">
+                    <table class="table compact">
+                      <thead><tr><th>Job</th><th>Last run</th><th>Result</th><th>Next</th><th></th></tr></thead>
+                      <tbody>
+                        <template x-for="j in jobs?.jobs || []" :key="j.id">
+                          <tr>
+                            <td><div x-text="j.label"></div><div class="muted sm" x-text="j.description"></div></td>
+                            <td class="sm"><span x-text="j.running ? 'running…' : ago(j.last_finished_at || j.last_started_at)"></span>
+                              <div class="muted" x-show="j.last_duration_ms != null && !j.running" x-text="(j.last_duration_ms / 1000).toFixed(1) + ' s'"></div></td>
+                            <td class="sm">
+                              <span class="dot" :class="j.last_status === 'ok' ? 'ok' : (j.last_status ? 'error' : '')"></span>
+                              <span x-text="j.last_error || j.last_message || '—'" :class="j.last_error ? 'error-text' : ''"></span>
+                              <div class="muted" x-show="j.last_error && j.last_success_at" x-text="'last success ' + ago(j.last_success_at)"></div></td>
+                            <td class="sm" x-text="j.enabled ? ago(j.next_run_at) : 'off'"></td>
+                            <td><button type="button" class="btn ghost sm" :disabled="j.running" @click="runJob(j)">Run now</button></td>
+                          </tr>
+                        </template>
+                        <tr x-show="jobs">
+                          <td><div>ComicVine matching</div><div class="muted sm">Resolves Comic Book Herald titles to ComicVine, one lookup at a time.</div></td>
+                          <td class="sm" x-text="ago(jobs?.matcher?.last_match_at)"></td>
+                          <td class="sm"><span x-text="jobs?.matcher?.pending + ' waiting'"></span>
+                            <div class="muted" x-show="jobs?.matcher?.current" x-text="'now: ' + jobs?.matcher?.current"></div>
+                            <div class="error-text" x-show="jobs?.matcher?.last_error" x-text="jobs?.matcher?.last_error"></div></td>
+                          <td class="sm">continuous</td><td></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <button type="button" class="btn ghost sm" @click="loadJobs()">Reload</button>
+                </div>
+              </template>
+
               <div class="settings-actions">
                 <div class="notice" x-show="testResult[page.id]"
                      :class="testResult[page.id]?.loading ? '' : (testResult[page.id]?.ok ? 'ok' : 'bad')"
@@ -403,8 +598,8 @@
           <template x-if="adminPage === 'users'">
             <div>
               <h1 class="page-title">Users</h1>
-              <p class="muted">Everyone who has signed in. Admin comes from the Kavita role; the rest applies immediately.
-                Limits and auto-approve take effect when requests arrive (Milestone 3).</p>
+              <p class="muted">Everyone who has signed in (and v1 users waiting for their first sign-in). Admin comes from the
+                Kavita role; everything else applies immediately. Blank limit / Default = the Requests page setting.</p>
               <div class="table-wrap">
                 <table class="table users">
                   <thead><tr>
@@ -457,11 +652,96 @@
             </div>
           </template>
 
-          <!-- Later milestones -->
-          <template x-if="navItem(adminPage)?.milestone">
+          <!-- Logs & About -->
+          <template x-if="adminPage === 'logs'">
             <div>
-              <h1 class="page-title" x-text="navItem(adminPage).label"></h1>
-              <div class="empty"><p>This page arrives in Milestone <span x-text="navItem(adminPage).milestone"></span>.</p></div>
+              <h1 class="page-title">Logs &amp; About</h1>
+              <div class="grid">
+                <div class="card">
+                  <h3>WishPanel <span x-text="about?.version"></span></h3>
+                  <p class="sm muted">Python <span x-text="about?.python"></span> · <span x-text="about?.platform"></span><br>
+                    Up <span x-text="fmtDuration(about?.uptime_s)"></span> · database <span x-text="fmtBytes(about?.db_size)"></span>
+                    · <span x-text="about?.users"></span> user(s)</p>
+                  <div class="row">
+                    <button class="btn ghost sm" @click="checkUpdate()" :disabled="update?.loading">Check for updates</button>
+                    <a class="btn ghost sm" :href="about?.repo" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+                  </div>
+                  <p class="sm" x-show="update && !update.loading" :class="update?.update_available ? 'ok-text' : 'muted'">
+                    <span x-text="update?.message"></span>
+                    <a class="link" x-show="update?.url && update?.update_available" :href="update?.url" target="_blank" rel="noopener noreferrer">Release notes ↗</a></p>
+                </div>
+                <div class="card">
+                  <h3>Backup</h3>
+                  <p class="sm muted">A consistent copy of the database. Keep <code>secret.key</code> from the appdata folder with it — without the key, saved API keys can't be decrypted.</p>
+                  <a class="btn ghost sm" href="api/admin/backup">Download database</a>
+                </div>
+                <div class="card">
+                  <h3>Settings export / import</h3>
+                  <p class="sm muted">JSON with every setting except API keys and passwords.</p>
+                  <div class="row">
+                    <a class="btn ghost sm" href="api/admin/settings/export">Export</a>
+                    <label class="btn ghost sm file-btn">Import…<input type="file" accept="application/json,.json" @change="importSettingsFile($event)" hidden></label>
+                  </div>
+                </div>
+              </div>
+
+              <h2 class="section-title">Import from Comic Requests v1</h2>
+              <div class="panel">
+                <p class="sm muted">Copies v1's comic and manga requests (with their Kapowarr/Suwayomi ids, so progress keeps updating),
+                  links them to users by name, and reuses v1's ComicVine matches for Discover. v1 is only read, never changed.
+                  Safe to run more than once.</p>
+                <p class="sm" x-show="importInfo">
+                  <span x-show="importInfo?.mounted">Found <code x-text="importInfo?.mounted_path"></code>.</span>
+                  <span x-show="!importInfo?.mounted" class="muted">Tip: mount v1's data folder read-only at <code>/import</code> to import without uploading.</span>
+                  <span class="muted" x-show="importInfo?.imported_requests" x-text="importInfo?.imported_requests + ' request(s) imported so far.'"></span></p>
+                <div class="row">
+                  <button class="btn sm" x-show="importInfo?.mounted" @click="importV1('mounted')">Import from /import/requests.db</button>
+                  <label class="btn ghost sm file-btn">Upload requests.db…<input type="file" @change="importV1('upload', $event)" hidden></label>
+                </div>
+                <p class="sm muted" x-show="importInfo?.last_result" x-text="'Last import (' + (importInfo?.last_result?.at || '') + '): ' + (importInfo?.last_result?.summary || '')"></p>
+                <ul class="sm muted" x-show="importInfo?.last_result?.warnings?.length">
+                  <template x-for="w in importInfo?.last_result?.warnings || []" :key="w"><li x-text="w"></li></template>
+                </ul>
+              </div>
+              <div class="notice" x-show="importMsg" :class="importMsg?.ok ? 'ok' : 'bad'" x-text="importMsg?.message"></div>
+
+              <h2 class="section-title">Recent logs</h2>
+              <div class="row wrap">
+                <select x-model="logs.level" @change="loadLogs()" class="narrow-input" aria-label="Level">
+                  <option value="debug">Debug</option><option value="info">Info</option><option value="warning">Warnings</option><option value="error">Errors</option>
+                </select>
+                <input type="search" x-model="logs.q" @input.debounce.400ms="loadLogs()" placeholder="Filter…" class="narrow-input">
+                <button class="btn ghost sm" @click="loadLogs()" x-text="logs.loading ? 'Loading…' : 'Reload'"></button>
+              </div>
+              <div class="logbox">
+                <template x-for="(e, i) in logs.entries" :key="i">
+                  <div class="logline" :class="e.level">
+                    <span class="muted" x-text="(e.ts || '').replace('T', ' ').slice(0, 19)"></span>
+                    <span class="lvl" x-text="e.level"></span>
+                    <span x-text="e.msg"></span>
+                    <span class="muted" x-text="logExtras(e)"></span>
+                    <pre x-show="e.exc" x-text="e.exc"></pre>
+                  </div>
+                </template>
+                <div class="muted sm" x-show="!logs.entries.length">No log entries at this level.</div>
+              </div>
+
+              <h2 class="section-title">Audit log</h2>
+              <div class="table-wrap">
+                <table class="table compact">
+                  <thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead>
+                  <tbody>
+                    <template x-for="a in audit" :key="a.id">
+                      <tr>
+                        <td class="sm" x-text="fmtDate(a.ts)"></td>
+                        <td class="sm" x-text="a.actor || 'system'"></td>
+                        <td class="sm mono" x-text="a.action + (a.target ? ' · ' + a.target : '')"></td>
+                        <td class="sm muted" x-text="a.details ? JSON.stringify(a.details) : ''"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </template>
         </div>
@@ -469,6 +749,76 @@
     </main>
     <footer class="footer muted sm">WishPanel <span x-text="site.version"></span></footer>
   </div>
+
+  <!-- ============ Title details ============ -->
+  <div class="modal-back" x-show="detail" x-transition.opacity @click.self="closeDetail()" @keydown.escape.window="closeDetail(); picker = null">
+    <div class="modal" role="dialog" aria-modal="true" :aria-label="detail?.title">
+      <button class="icon-btn close" @click="closeDetail()" aria-label="Close">✕</button>
+      <div class="detail">
+        <div class="detail-cover"><img @error="$el.style.display='none'" x-show="detail?.cover_url" :src="detail?.cover_url" alt="" referrerpolicy="no-referrer"></div>
+        <div class="detail-body">
+          <h2 x-text="detail?.title"></h2>
+          <p class="muted sm" x-show="detail?.alt_titles?.length" x-text="(detail?.alt_titles || []).slice(0, 3).join(' · ')"></p>
+          <p class="sm">
+            <span class="pill" x-text="mediaLabel(detail?.media_type)"></span>
+            <span x-text="[detail?.year, detail?.publisher, detail?.issue_count ? detail.issue_count + ' ' + unitFor(detail?.media_type) : '', detail?.status].filter(Boolean).join(' · ')"></span>
+          </p>
+          <p class="desc" x-text="detail?.description || 'No description.'"></p>
+          <a class="link sm" x-show="detail?.url" :href="detail?.url" target="_blank" rel="noopener noreferrer"
+             x-text="'View on ' + ({comicvine: 'ComicVine', anilist: 'AniList', mangabaka: 'MangaBaka'}[detail?.provider] || 'source') + ' ↗'"></a>
+          <div class="detail-actions">
+            <template x-if="detail?.request">
+              <div><span class="pill" :class="statusTone[detail.request.status]" x-text="statusLabel[detail.request.status]"></span>
+                <a class="link sm" href="#/requests" @click="closeDetail()" x-show="detail.request.mine">See my requests</a></div>
+            </template>
+            <template x-if="!detail?.request">
+              <div class="row">
+                <button class="btn" @click="requestItem(detail)" :disabled="detailBusy || (quota && quota.remaining === 0)"
+                        x-text="detailBusy ? 'Requesting…' : (detail?.in_library ? 'Request anyway' : 'Request')"></button>
+                <span class="pill ok" x-show="detail?.in_library">Already in your library</span>
+              </div>
+            </template>
+            <p class="sm muted" x-show="quota && quota.limit !== null"
+               x-text="quota?.remaining + ' of ' + quota?.limit + ' requests left today'"></p>
+            <div class="notice" x-show="detailMsg" :class="detailMsg?.ok ? 'ok' : 'bad'" x-text="detailMsg?.message"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Choose Suwayomi source ============ -->
+  <div class="modal-back" x-show="picker" x-transition.opacity @click.self="picker = null">
+    <template x-if="picker">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Choose source">
+      <button class="icon-btn close" @click="picker = null" aria-label="Close">✕</button>
+      <h2>Choose a source</h2>
+      <p class="muted sm">For “<span x-text="picker?.req?.title"></span>”. Picking one adds it to Suwayomi and queues every chapter.</p>
+      <form class="row wrap" @submit.prevent="searchPicker()">
+        <input type="search" x-model="picker.q" :placeholder="'Search as: ' + (picker?.titles || []).join(' / ')" class="grow" x-show="picker">
+        <select x-model="picker.source" class="narrow-input" x-show="picker">
+          <option value="">All allowed sources</option>
+          <template x-for="src in picker?.sources || []" :key="src.id"><option :value="src.id" x-text="src.name"></option></template>
+        </select>
+        <button class="btn ghost sm" :disabled="picker?.loading">Search</button>
+      </form>
+      <div class="notice bad" x-show="picker?.error" x-text="picker?.error"></div>
+      <p class="sm muted" x-show="picker?.loading">Searching sources… (each source can take a few seconds)</p>
+      <ul class="cand-list">
+        <template x-for="c in picker?.candidates || []" :key="c.source_id + ':' + c.manga_id">
+          <li>
+            <div class="grow"><div x-text="c.title"></div><div class="muted sm" x-text="c.source_name + ' · match ' + Math.round(c.score * 100) + '%'"></div></div>
+            <button class="btn sm" @click="pickCandidate(c)" :disabled="picker?.loading">Use this</button>
+          </li>
+        </template>
+      </ul>
+      <p class="sm muted" x-show="picker && !picker.loading && !picker.candidates.length && !picker.error">Nothing found. Try another spelling.</p>
+      <ul class="sm error-text" x-show="picker?.errors?.length"><template x-for="e in picker?.errors || []" :key="e"><li x-text="e"></li></template></ul>
+    </div>
+    </template>
+  </div>
+
+  <div class="toast" x-show="toast" x-transition :class="toast?.ok ? 'ok' : 'bad'" x-text="toast?.message" role="status"></div>
 </div>
 </body>
 </html>

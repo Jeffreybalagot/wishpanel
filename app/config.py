@@ -11,6 +11,8 @@ Supported variables (all optional):
     LOG_LEVEL            debug | info | warning | error (default info)
     BASE_URL             public URL or path prefix, e.g. https://example.com/wishpanel or /wishpanel
     FORWARDED_ALLOW_IPS  proxies trusted to set X-Forwarded-* (default 127.0.0.1)
+    IMPORT_DIR           where a v1 ``requests.db`` may be mounted read-only (default /import)
+    BACKGROUND_JOBS      0 disables the scheduler and match worker (tests/development)
 
 PUID / PGID / TZ are consumed by the container entrypoint, not by Python.
 """
@@ -42,6 +44,8 @@ class BootstrapConfig:
     log_level: str
     base_path: str
     forwarded_allow_ips: str
+    import_dir: Path = Path("/import")
+    background_jobs: bool = True
 
     @property
     def db_path(self) -> Path:
@@ -79,4 +83,7 @@ class BootstrapConfig:
             log_level=level,
             base_path=_normalise_prefix(env.get("BASE_URL", "")),
             forwarded_allow_ips=env.get("FORWARDED_ALLOW_IPS", "127.0.0.1").strip() or "127.0.0.1",
+            import_dir=Path(env.get("IMPORT_DIR", "/import")).expanduser(),
+            background_jobs=env.get("BACKGROUND_JOBS", "1").strip().lower()
+            not in ("0", "false", "no"),
         )

@@ -8,9 +8,8 @@ Kavita account, find a title, and request it — WishPanel hands it to the right
 
 WishPanel never downloads anything itself; it's a thin, friendly orchestration layer.
 
-> **Status: Milestone 2 of 5 (admin settings).** Kavita sign-in, first-run setup, encrypted
-> settings storage, health checks and the UI shell work today. Settings pages, requests,
-> discover and search arrive in Milestones 2–4. See [`SPEC.md`](SPEC.md) for the plan.
+> **Status: 2.0 beta.** All five milestones are in: Kavita sign-in, admin settings, requests for
+> comics/manga/manhwa, Discover and Search, background jobs, the v1 importer and Logs & About.
 
 ## Highlights
 
@@ -18,6 +17,10 @@ WishPanel never downloads anything itself; it's a thin, friendly orchestration l
 - **No configuration in environment variables.** Every URL, API key and option is set in
   the web UI and stored encrypted at rest (Fernet, key generated on first boot).
 - **Kavita accounts.** No new passwords; Kavita's `Admin` role (configurable) = WishPanel admin.
+- **Discover & Search.** AniList and MangaBaka shelves for manga/manhwa; Comic Book Herald lists and
+  character reading orders for comics, matched to ComicVine in the background.
+- **Requests that finish.** Comics → Kapowarr, manga/manhwa → your chosen Suwayomi sources in
+  priority order; progress, "partially available" and Kavita scans are tracked automatically.
 - **Unraid friendly.** `PUID`/`PGID`/`UMASK`, Docker `HEALTHCHECK`, multi-arch (amd64 + arm64).
 
 ## Quick start
@@ -58,8 +61,20 @@ Until it's listed in CA, add the container manually with the values from the com
 ### Running next to Comic Requests v1
 
 WishPanel is designed to run side-by-side with v1: different container name (`wishpanel`),
-different host port (`5658`), different appdata folder. It never reads v1's config or database.
-(A one-time v1 importer is planned for Milestone 5.)
+different host port (`5658`), different appdata folder.
+
+To bring v1's requests over, either upload v1's `requests.db` in **Admin → Logs & About**, or add
+v1's data folder as a **read-only** path mapped to `/import` and press *Import*. v1 is only read,
+never changed, and the import can be repeated safely.
+
+## After setup — a 5-minute checklist
+
+1. **Library — Kavita**: add an API key (admin user), map the Comics / Manga / Manhwa libraries.
+2. **Downloader — Kapowarr**: URL, API key, root folder → Test → Save.
+3. **Downloader — Suwayomi**: URL, auth mode, then add the sources WishPanel may use, in priority order.
+4. **Metadata — ComicVine**: API key (or set *Media Types → Comic search uses* to Kapowarr).
+5. **Jobs**: press *Run now* on both Discover refreshes to fill the shelves straight away.
+6. **Requests / Users**: daily limits, approval, per-user media types.
 
 ## Environment variables
 
@@ -83,7 +98,7 @@ Coming from v1? On the very first boot only, WishPanel imports `KAVITA_URL`, `KA
 
 | Path | What |
 |---|---|
-| `wishpanel.db` | SQLite database (settings, users, sessions, audit log) |
+| `wishpanel.db` | SQLite database (settings, users, requests, discover cache, jobs, audit log) |
 | `setup-code.txt` | One-time setup code (only until setup is completed) |
 | `secret.key` | Encryption key for stored secrets. **Back it up with the database** — without it, saved API keys must be re-entered. |
 | `logs/wishpanel.log` | Structured JSON logs (rotated, 5 × 5 MB) — easy to ship to Loki |
@@ -124,7 +139,8 @@ CONFIG_DIR=./.devconfig uv run python -m app   # http://localhost:8080
 After changing dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock`.
 
 Layout: `app/providers/` holds the provider interfaces (`base.py`) and implementations
-(Kavita today; Kapowarr, Suwayomi, ComicVine, AniList, MangaBaka, Comic Book Herald next).
+(Kavita, Kapowarr, Suwayomi, ComicVine, AniList, MangaBaka, Comic Book Herald). `app/jobs/` has the
+scheduler and job list.
 `app/services/` is business logic, `app/api/` the FastAPI routers, `app/web/static/` the
 Alpine.js frontend (no build step). Design notes: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 

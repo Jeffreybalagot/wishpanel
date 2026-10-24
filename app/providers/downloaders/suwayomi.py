@@ -1,4 +1,4 @@
-"""Suwayomi downloader — connection test and source list (M2). Adding manga arrives in M3.
+"""Suwayomi downloader: sources, source search, add to library, enqueue chapters, status.
 
 Suwayomi-Server 2.x exposes GraphQL at ``/api/graphql``. Auth modes (server
 setting ``authMode``): NONE, BASIC_AUTH (HTTP Basic), SIMPLE_LOGIN / UI_LOGIN
@@ -22,6 +22,27 @@ LOCAL_SOURCE_ID = "0"
 
 _ABOUT = "query { aboutServer { name version buildType } }"
 _SOURCES = "query { sources { nodes { id name lang displayName } } }"
+_SEARCH = (
+    "mutation Search($s: LongString!, $q: String) { fetchSourceManga(input: "
+    "{source: $s, type: SEARCH, page: 1, query: $q}) { mangas { id title thumbnailUrl "
+    "inLibrary } } }"
+)
+_ADD = (
+    "mutation Add($id: Int!) { updateManga(input: {id: $id, patch: {inLibrary: true}}) "
+    "{ manga { id inLibrary } } }"
+)
+_FETCH_CHAPTERS = (
+    "mutation Fetch($id: Int!) { fetchChapters(input: {mangaId: $id}) "
+    "{ chapters { id chapterNumber isDownloaded } } }"
+)
+_CHAPTERS = (
+    "query Chapters($id: Int!) { manga(id: $id) { id title inLibrary downloadCount "
+    "chapters { totalCount nodes { id chapterNumber isDownloaded } } } }"
+)
+_ENQUEUE = (
+    "mutation Enqueue($ids: [Int!]!) { enqueueChapterDownloads(input: {ids: $ids}) "
+    "{ clientMutationId } }"
+)
 _LOGIN = (
     "mutation Login($u: String!, $p: String!) "
     "{ login(input: {username: $u, password: $p}) { accessToken } }"
@@ -56,6 +77,7 @@ class SuwayomiDownloader:
                 json={"query": query, "variables": variables},
                 headers=headers,
                 retries=1,
+                timeout=30.0,
             )
         except ExternalServiceError as exc:
             raise ProviderError(
@@ -104,14 +126,47 @@ class SuwayomiDownloader:
             raise ProviderError(f"Suwayomi returned an error: {msg}")
         return body.get("data") or {}
 
-    async def _query(self, query: str) -> dict[str, Any]:
+    async def _query(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
         if not self.base_url:
             raise ProviderError("Suwayomi URL is not set.")
-        resp = await self._post(query, {}, await self._auth_headers())
+        resp = await self._post(query, variables or {}, await self._auth_headers())
+        if resp.status_code == 401 and self.auth_mode == "login" and self._token:
+            self._token = None  # token expired: log in again once
+            resp = await self._post(query, variables or {}, await self._auth_headers())
         return self._data(resp)
 
+    async def search_source(self, source_id: str, query: str) -> list[dict[str, Any]]:
+        data = await self._query(_SEARCH, {"s": str(source_id), "q": query})
+        mangas = ((data.get("fetchSourceManga") or {}).get("mangas")) or []
+        return [m for m in mangas if isinstance(m, dict) and m.get("id") is not None]
+
+    async def add_to_library(self, manga_id: int) -> None:
+        await self._query(_ADD, {"id": int(manga_id)})
+
+    async def fetch_chapters(self, manga_id: int) -> list[dict[str, Any]]:
+        """Ask the source for the chapter list (network) and return it."""
+        data = await self._query(_FETCH_CHAPTERS, {"id": int(manga_id)})
+        return ((data.get("fetchChapters") or {}).get("chapters")) or []
+
+    async def chapter_status(self, manga_id: int) -> tuple[int, int, list[int]]:
+        """(downloaded, total, ids not yet downloaded) from Suwayomi's database."""
+        data = await self._query(_CHAPTERS, {"id": int(manga_id)})
+        manga = data.get("manga")
+        if not manga:
+            raise ProviderError("Suwayomi no longer has that manga.")
+        chapters = manga.get("chapters") or {}
+        nodes = chapters.get("nodes") or []
+        missing = [int(c["id"]) for c in nodes if not c.get("isDownloaded")]
+        have = sum(1 for c in nodes if c.get("isDownloaded"))
+        total = int(chapters.get("totalCount") or len(nodes))
+        return have, total, missing
+
+    async def enqueue(self, chapter_ids: list[int]) -> None:
+        if chapter_ids:
+            await self._query(_ENQUEUE, {"ids": [int(i) for i in chapter_ids]})
+
     async def list_sources(self) -> list[Source]:
-        data = await self._query(_SOURCES)
+        data = await self._query(_SOURCES, {})
         nodes = ((data.get("sources") or {}).get("nodes")) or []
         sources = [
             Source(
@@ -129,7 +184,7 @@ class SuwayomiDownloader:
 
     async def test_connection(self) -> ConnectionTestResult:
         try:
-            about = (await self._query(_ABOUT)).get("aboutServer") or {}
+            about = (await self._query(_ABOUT, {})).get("aboutServer") or {}
             sources = await self.list_sources()
         except ProviderError as exc:
             return ConnectionTestResult(False, exc.message)

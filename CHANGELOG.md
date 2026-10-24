@@ -2,7 +2,44 @@
 
 All notable changes to WishPanel are documented here. Format: [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [Unreleased] — 2.0.0b1
+
+### Added — Milestone 3 (requests)
+- One request model for comics, manga and manhwa with the full status machine: pending, approved,
+  added, downloading, partial, in library, failed, waiting for source, waiting for downloader, denied.
+- Comics go to Kapowarr (monitor all, monitor new issues, auto-search; "already added" links the
+  existing volume). Manga/manhwa are matched across your allowed Suwayomi sources in priority
+  order (v1 rules: skip doujinshi/anthology/fan-coloured/novel editions, prefer the plain edition,
+  configurable threshold), added to the library and every chapter queued.
+- Daily limit (rolling 24 h; per-user override; admins exempt by default), per-user media types,
+  approval queue (global or per user), duplicate detection by metadata id and AniList id.
+- My Requests for everyone; request queue for admins with approve / deny (with reason) / retry /
+  refresh / choose source (search any allowed source and pick) / remove. Everything is audited.
+- Availability sync with configurable partial rule; optional Kavita scan when a title completes;
+  new chapters queued automatically for ongoing manga (setting).
+- Graceful degradation: downloader down or unconfigured → "waiting for downloader", retried hourly.
+
+### Added — Milestone 4 (discover, search, jobs)
+- Search for comics (ComicVine directly, or Kapowarr's ComicVine search without a key), ranked
+  with English publishers first and blocked publishers removed; manga/manhwa via AniList (country
+  of origin decides manga vs manhwa) with MangaBaka as fallback. Results show "requested" and
+  "in library" (Kavita) badges. Title details modal with one-click Request.
+- Discover shelves: AniList Trending / Popular Ongoing / All-Time Popular and MangaBaka Completed /
+  Highest Rated per kind; Comic Book Herald lists (most popular sections, monthly favourites, best
+  of this/last year, decade lists, all time) and character/team reading orders with ComicVine
+  fallback. Shelf choice and order configurable; custom characters allowed.
+- Background ComicVine matching of list titles at a configurable pace (default one lookup per 18 s).
+- Persistent scheduler with Jobs page: schedules, Run now, last run/result/error, next run.
+- Metadata cache to spare external rate limits; per-user search rate limit.
+
+### Added — Milestone 5 (polish)
+- v1 importer (upload `requests.db` or mount v1's folder read-only at `/import`): requests keep
+  their Kapowarr/Suwayomi ids, users are matched by name (placeholders link on first sign-in),
+  v1's ComicVine matches are reused for Discover. Idempotent.
+- Logs & About: log viewer with level/filter, version and update check, database backup download,
+  settings export/import (secrets never exported), audit log.
+- Unraid template finalised (optional `/import` path).
+
 
 ### Added — Milestone 2 (admin settings)
 - Settings pages rendered from a server-side schema: General (site name, public URL, logo upload,

@@ -58,6 +58,12 @@ class ConnectionTestResult:
 
 @dataclass(frozen=True)
 class SearchResult:
+    """A title card: search hit, discover item or request target.
+
+    ``provider``/``external_id`` identify it in a metadata source ("comicvine",
+    "anilist", "mangabaka"); ``key`` is the stable ``<prefix>:<id>`` form the UI uses.
+    """
+
     external_id: str
     title: str
     media_type: MediaType
@@ -65,20 +71,32 @@ class SearchResult:
     cover_url: str | None = None
     publisher: str | None = None
     issue_count: int | None = None
-
-
-@dataclass(frozen=True)
-class TitleDetails:
-    external_id: str
-    title: str
-    media_type: MediaType
+    provider: str = ""
+    alt_titles: tuple[str, ...] = ()
     description: str | None = None
-    cover_url: str | None = None
-    year: int | None = None
-    publisher: str | None = None
-    issue_count: int | None = None
+    anilist_id: int | None = None
+    status: str | None = None  # publication status: releasing / finished / …
+    url: str | None = None
     country: str | None = None
     adult: bool = False
+    translated: bool = False
+    score: float | None = None
+
+    @property
+    def key(self) -> str:
+        prefix = {"comicvine": "cv", "anilist": "al", "mangabaka": "mb"}.get(self.provider, "x")
+        return f"{prefix}:{self.external_id}"
+
+    def to_json(self) -> dict:
+        d = {k: getattr(self, k) for k in self.__dataclass_fields__}
+        d["media_type"] = str(self.media_type)
+        d["alt_titles"] = list(self.alt_titles)
+        d["key"] = self.key
+        return d
+
+
+# Details use the same shape; a separate name keeps signatures readable.
+TitleDetails = SearchResult
 
 
 @dataclass(frozen=True)

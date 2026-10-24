@@ -17,6 +17,9 @@ from app import __version__
 from app.api import admin_settings as admin_settings_api
 from app.api import admin_users as admin_users_api
 from app.api import auth as auth_api
+from app.api import catalog as catalog_api
+from app.api import maintenance as maintenance_api
+from app.api import requests as requests_api
 from app.api import setup as setup_api
 from app.api import system as system_api
 from app.config import BootstrapConfig
@@ -25,10 +28,13 @@ from app.core.http import build_client
 from app.core.logging import configure_logging
 from app.core.security import LoginThrottle
 from app.db.session import create_engine, create_sessionmaker
+from app.jobs.definitions import JOBS
+from app.jobs.scheduler import Scheduler
 from app.providers.base import ProviderError
 from app.services import bootstrap
 from app.services.auth import purge_expired_sessions
 from app.services.health import HealthService
+from app.services.matching import MatchWorker
 
 log = logging.getLogger("app")
 
@@ -69,7 +75,7 @@ def create_app(cfg: BootstrapConfig | None = None, *, configure_logs: bool = Tru
             await db.commit()
 
         http = build_client()
-        app.state.ctx = AppContext(
+        ctx = AppContext(
             config=cfg,
             engine=engine,
             sessionmaker=sessionmaker,
@@ -78,10 +84,19 @@ def create_app(cfg: BootstrapConfig | None = None, *, configure_logs: bool = Tru
             throttle=LoginThrottle(),
             health=HealthService(sessionmaker, box, http, cfg.config_dir),
         )
+        ctx.scheduler = Scheduler(ctx, JOBS)
+        ctx.matcher = MatchWorker(ctx)
+        app.state.ctx = ctx
+        if cfg.background_jobs:
+            ctx.scheduler.start()
+            ctx.matcher.start()
         log.info("WishPanel ready", extra={"port": cfg.port})
         try:
             yield
         finally:
+            await ctx.scheduler.stop()
+            await ctx.matcher.stop()
+            await ctx.runner.cancel_all()
             await http.aclose()
             await engine.dispose()
             log.info("WishPanel stopped")
@@ -108,6 +123,9 @@ def create_app(cfg: BootstrapConfig | None = None, *, configure_logs: bool = Tru
     routes.include_router(admin_settings_api.router)
     routes.include_router(admin_settings_api.public_router)
     routes.include_router(admin_users_api.router)
+    routes.include_router(catalog_api.router)
+    routes.include_router(requests_api.router)
+    routes.include_router(maintenance_api.router)
     if prefix:
         routes.include_router(system_api.health_router)
     app.include_router(routes, prefix=prefix)

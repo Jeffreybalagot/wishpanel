@@ -51,10 +51,15 @@ def test_schema_lists_m2_pages(client: TestClient, setup_done) -> None:
     assert [p["id"] for p in pages] == [
         "general",
         "authentication",
+        "media-types",
         "kavita",
         "kapowarr",
         "suwayomi",
         "comicvine",
+        "anilist",
+        "discover",
+        "requests",
+        "jobs",
     ]
     kav = next(p for p in pages if p["id"] == "kavita")
     assert kav["connection"] == "kavita" and "kavita.scan" in kav["actions"]

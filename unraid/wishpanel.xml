@@ -1,5 +1,4 @@
 <?xml version="1.0"?>
-<!-- DRAFT Community Applications template (finalised in Milestone 5). -->
 <Container version="2">
   <Name>wishpanel</Name>
   <Repository>ghcr.io/jeffreybalagot/wishpanel:latest</Repository>
@@ -16,6 +15,7 @@
   <Shell>sh</Shell>
   <Config Name="WebUI Port" Target="8080" Default="5658" Mode="tcp" Description="Port for the web interface" Type="Port" Display="always" Required="true" Mask="false">5658</Config>
   <Config Name="Config" Target="/config" Default="/mnt/user/appdata/wishpanel" Mode="rw" Description="Database, encryption key and logs" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/wishpanel</Config>
+  <Config Name="v1 import (optional)" Target="/import" Default="" Mode="ro" Description="Optional, read-only: Comic Requests v1's data folder (the one containing requests.db) for Admin → Logs &amp; About → Import. Remove after importing." Type="Path" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="PUID" Target="PUID" Default="99" Description="User ID to run as" Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
   <Config Name="PGID" Target="PGID" Default="100" Description="Group ID to run as" Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
   <Config Name="UMASK" Target="UMASK" Default="022" Description="File creation mask" Type="Variable" Display="advanced" Required="false" Mask="false">022</Config>

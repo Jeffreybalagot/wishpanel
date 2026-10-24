@@ -58,7 +58,14 @@ def kavita() -> Iterator[respx.MockRouter]:
 
 
 def make_cfg(tmp_path: Path, **env: str) -> BootstrapConfig:
-    return BootstrapConfig.from_env({"CONFIG_DIR": str(tmp_path / "config"), **env})
+    return BootstrapConfig.from_env(
+        {
+            "CONFIG_DIR": str(tmp_path / "config"),
+            "IMPORT_DIR": str(tmp_path / "import"),
+            "BACKGROUND_JOBS": "0",
+            **env,
+        }
+    )
 
 
 @pytest.fixture
@@ -106,3 +113,12 @@ def db_rows(db_path: Path, sql: str) -> list[tuple]:
 def admin_headers(setup: dict) -> dict[str, str]:
     """CSRF header for state-changing admin calls."""
     return {"X-CSRF-Token": setup["csrf_token"]}
+
+
+@pytest.fixture(autouse=True)
+def _no_outbound_throttle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Outbound API pacing (ComicVine 1 req/s etc.) only slows tests down."""
+    from app.core import ratelimit
+
+    monkeypatch.setattr(ratelimit, "INTERVALS", {})
+    monkeypatch.setattr(ratelimit, "OUTBOUND", ratelimit.MinInterval())

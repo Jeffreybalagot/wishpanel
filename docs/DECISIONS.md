@@ -142,3 +142,45 @@ SVG is refused because it can carry script.
 **Not in M2** — Media Types mapping, Requests, AniList/MangaBaka, Discover, Jobs and Logs pages
 are visible in the nav but marked for their milestones. Per-user limits and auto-approve are
 stored now and enforced when requests exist (M3).
+
+## Milestones 3–5
+
+**Scheduler instead of APScheduler (§10)** — The jobs are five "every N hours" tasks whose schedules
+live in Settings. A 30-second asyncio tick against the `jobs` table (due when enabled and the last
+start is older than the interval) gives persistence across restarts, live schedule changes and
+Run now without another dependency or a second source of truth. First runs start ~45 s after boot.
+
+**Comic Book Herald via the WordPress REST API** — Pages are fetched from `/wp-json/wp/v2/posts|pages`
+and parsed with BeautifulSoup (numbered headings, bold picks, "Collects…" lines), instead of
+scraping themed HTML. Lists whose slug changes yearly (best of year, decade, monthly favourites) are
+found with the WordPress search endpoint plus a title pattern.
+
+**Matching is a worker, not a job** — List titles go into `match_cache` and one background worker
+resolves them, one lookup every `discover.match_interval_seconds`. Shelves show what's matched so
+far. v1 scoring is kept (similarity ≥ 0.8, English publishers +12, foreign/translated −40, issue
+count and year hint as tie-breakers).
+
+**Partial rule details** — For comics Kapowarr's issue count is authoritative; for manga the larger
+of Suwayomi's chapter count and AniList's is used, since sources lag. During the first 24 h a
+request that's still filling in shows *downloading* rather than *partial*.
+
+**Duplicates** — By metadata id, and for manga also by AniList id (MangaBaka items carry it), so the
+same series found via AniList and MangaBaka isn't requested twice. Failed/denied requests can be
+requested again (setting).
+
+**Request metadata** — The server looks titles up itself; the browser's copy is only used when the
+metadata service is unreachable (e.g. comics with no ComicVine key, searched through Kapowarr).
+
+**"Change source" scope** — Implemented for manga/manhwa (search allowed Suwayomi sources, pick a
+result). For comics the ComicVine volume *is* the request; remove and request the right volume.
+
+**v1 import** — Reads a temporary copy (plus WAL) of v1's database; v1 is never opened for writing.
+Imported requests don't count against anyone's daily limit. v1 users who haven't signed in to
+WishPanel get a placeholder keyed by lower-case username, which the existing re-keying links to
+their Kavita id on first sign-in.
+
+**Backups** — The database backup doesn't include `secret.key` on purpose (that would put the key
+next to the secrets it protects in one download); the page tells you to keep it with the backup.
+
+**Extra env vars** — `IMPORT_DIR` and `BACKGROUND_JOBS` exist for development/tests, like
+`CONFIG_DIR`; neither carries configuration.

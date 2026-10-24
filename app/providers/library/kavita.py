@@ -1,4 +1,4 @@
-"""Kavita as a library: list libraries, trigger scans (M2). Presence checks arrive in M3.
+"""Kavita as a library: list libraries, trigger scans, series search for "in library" checks.
 
 Auth: Kavita 0.8+ "Auth Keys" go in the ``x-api-key`` header. Older servers only
 accept the OPDS API key via ``POST /api/Plugin/authenticate``, which returns a
@@ -110,6 +110,30 @@ class KavitaLibraryChecker:
             if isinstance(item, dict) and item.get("id") is not None
         ]
         return sorted(libs, key=lambda lib: lib.name.lower())
+
+    async def search_series(self, query: str) -> list[dict]:
+        """Series matching ``query``: [{name, original_name, localized_name, library_id, id}]."""
+        resp = await self._get(
+            "/api/Search/search", params={"queryString": query, "includeChapterAndFiles": "false"}
+        )
+        if resp.status_code != 200:
+            raise ProviderError(status_message(SERVICE, resp.status_code))
+        body = json_body(resp, SERVICE)
+        series = body.get("series") if isinstance(body, dict) else None
+        out = []
+        for item in series or []:
+            if not isinstance(item, dict):
+                continue
+            out.append(
+                {
+                    "id": item.get("seriesId") or item.get("id"),
+                    "name": item.get("name") or "",
+                    "original_name": item.get("originalName") or "",
+                    "localized_name": item.get("localizedName") or "",
+                    "library_id": str(item.get("libraryId") or ""),
+                }
+            )
+        return out
 
     async def trigger_scan(self, library_id: str) -> None:
         resp = await self._request(

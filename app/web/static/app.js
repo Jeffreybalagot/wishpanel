@@ -54,17 +54,34 @@ const ADMIN_NAV = [
   { id: "general", label: "General", schema: true },
   { id: "authentication", label: "Authentication", schema: true },
   { id: "users", label: "Users", custom: true },
-  { id: "media-types", label: "Media Types", milestone: 3 },
+  { id: "requests-admin", label: "Request queue", href: "#/requests/all" },
+  { id: "media-types", label: "Media Types", schema: true },
   { id: "kavita", label: "Library — Kavita", schema: true },
   { id: "kapowarr", label: "Downloader — Kapowarr", schema: true },
   { id: "suwayomi", label: "Downloader — Suwayomi", schema: true },
   { id: "comicvine", label: "Metadata — ComicVine", schema: true },
-  { id: "anilist", label: "Metadata — AniList / MangaBaka", milestone: 4 },
-  { id: "discover", label: "Discover", milestone: 4 },
-  { id: "requests", label: "Requests", milestone: 3 },
-  { id: "jobs", label: "Jobs", milestone: 4 },
-  { id: "logs", label: "Logs & About", milestone: 5 },
+  { id: "anilist", label: "Metadata — AniList / MangaBaka", schema: true },
+  { id: "discover", label: "Discover", schema: true },
+  { id: "requests", label: "Requests", schema: true },
+  { id: "jobs", label: "Jobs", schema: true },
+  { id: "logs", label: "Logs & About", custom: true },
 ];
+
+const STATUS_LABEL = {
+  pending: "Pending approval", approved: "Approved", added: "Added", downloading: "Downloading",
+  partial: "Partially available", in_library: "In library", failed: "Failed",
+  waiting_for_source: "Waiting for source", waiting_for_downloader: "Waiting for downloader", denied: "Denied",
+};
+const STATUS_TONE = {
+  pending: "warn", approved: "info", added: "info", downloading: "info", partial: "warn",
+  in_library: "ok", failed: "bad", waiting_for_source: "warn", waiting_for_downloader: "warn", denied: "bad",
+};
+const REQUEST_FILTERS = [
+  { id: "active", label: "Active" }, { id: "pending", label: "Pending" },
+  { id: "waiting_for_source", label: "Waiting for source" }, { id: "partial", label: "Partial" },
+  { id: "in_library", label: "In library" }, { id: "failed", label: "Failed" }, { id: "", label: "All" },
+];
+const BUSY_STATUSES = new Set(["approved"]);
 
 const SERVICE_URL_KEY = { kavita: "kavita.url", kapowarr: "kapowarr.url", suwayomi: "suwayomi.url" };
 
@@ -112,6 +129,26 @@ document.addEventListener("alpine:init", () => {
     creds: { username: "", password: "" },
     setup: { step: 0, code: "", url: "", adminRole: "Admin", username: "", password: "", test: null },
     adminNav: ADMIN_NAV,
+    // discover / search / details
+    media: "",                 // current media tab for Discover/Search
+    rows: {},                  // media -> {loading, error, rows}
+    q: "",
+    results: [], searching: false, searchError: "", searched: "",
+    detail: null,              // item shown in the modal
+    detailBusy: false, detailMsg: null,
+    quota: null,
+    // requests
+    reqs: { scope: "mine", status: "active", media: "", q: "", list: [], total: 0, counts: {}, loading: false, error: "" },
+    reqMsg: {},
+    pollTimer: null,
+    // choose-source modal
+    picker: null,
+    // discover / jobs / logs admin
+    discoverStatus: null,
+    jobs: null,
+    logs: { level: "info", q: "", entries: [], loading: false },
+    about: null, update: null, audit: [], importInfo: null, importMsg: null,
+    statusLabel: STATUS_LABEL, statusTone: STATUS_TONE, requestFilters: REQUEST_FILTERS,
 
     get visibleTabs() { return TABS.filter((t) => !t.admin || this.me?.is_admin); },
     get enabledMediaTypes() { return MEDIA.filter((m) => this.site.media_types?.[m.id]); },
@@ -155,10 +192,15 @@ document.addEventListener("alpine:init", () => {
       const id = parts[0] || this.site.default_tab || "discover";
       const known = this.visibleTabs.some((t) => t.id === id);
       this.tab = known ? id : "discover";
+      if (!this.media || !this.site.media_types?.[this.media]) this.media = this.enabledMediaTypes[0]?.id || "";
+      if (this.tab === "discover") this.loadRows(this.media);
+      if (this.tab === "requests") { this.reqs.scope = parts[1] === "all" && this.me?.is_admin ? "all" : "mine"; this.loadRequests(); }
+      if (this.tab === "search") this.$nextTick(() => this.$refs.searchBox?.focus());
       if (this.tab === "admin") {
         const page = ADMIN_NAV.find((p) => p.id === parts[1]) ? parts[1] : "overview";
         this.openAdminPage(page);
       }
+      this.schedulePoll();
     },
 
     goAdmin(id) { location.hash = id === "overview" ? "#/admin" : `#/admin/${id}`; },
@@ -169,9 +211,12 @@ document.addEventListener("alpine:init", () => {
       try {
         if (id === "overview") this.admin = await api("GET", "api/admin/overview");
         else if (id === "users") await this.loadUsers();
+        else if (id === "logs") await this.loadLogsPage();
         else if (this.navItem(id)?.schema) {
           await this.ensureSettings();
           this.autoLoadOptions(this.page);
+          if (id === "discover") this.loadDiscoverStatus();
+          if (id === "jobs") this.loadJobs();
         }
       } catch (e) { if (e.status === 401) this.showLogin(); else this.pageMsg = { ok: false, message: e.message }; }
     },
@@ -201,7 +246,7 @@ document.addEventListener("alpine:init", () => {
 
     visible(f) {
       if (!f.show_if) return true;
-      return f.show_if.values.includes(this.draft[f.show_if.key]);
+      return f.show_if.values.includes(String(this.draft[f.show_if.key]));
     },
 
     secretDirty(key) { return !!this.secretDraft[key] || !!this.secretClear[key]; },
@@ -300,7 +345,7 @@ document.addEventListener("alpine:init", () => {
     // source-list widget
     selectedSources(f) { return this.draft[f.key] || []; },
     availableSources(f) {
-      const langs = normalise({ type: "list" }, this.draft["suwayomi.source_languages"]);
+      const langs = f.key === "suwayomi.sources" ? normalise({ type: "list" }, this.draft["suwayomi.source_languages"]) : [];
       const q = this.sourceFilter.trim().toLowerCase();
       const chosen = new Set(this.selectedSources(f));
       return this.optionsFor(f).filter((o) =>
@@ -308,7 +353,10 @@ document.addEventListener("alpine:init", () => {
         (!langs.length || langs.includes(o.hint)) &&
         (!q || o.label.toLowerCase().includes(q)));
     },
-    addSource(f, id) { this.draft[f.key] = [...this.selectedSources(f), id]; },
+    addSource(f, id) {
+      id = String(id || "").trim();
+      if (id && !this.selectedSources(f).includes(id)) this.draft[f.key] = [...this.selectedSources(f), id];
+    },
     removeSource(f, id) { this.draft[f.key] = this.selectedSources(f).filter((x) => x !== id); },
     moveSource(f, i, delta) {
       const list = [...this.selectedSources(f)]; const j = i + delta;
@@ -355,6 +403,251 @@ document.addEventListener("alpine:init", () => {
     },
 
     get logoUrl() { return this.site.logo_version ? `api/branding/logo?v=${this.site.logo_version}` : ""; },
+
+
+    // ---------------------------------------------------------------- helpers
+    mediaLabel(id) { return MEDIA.find((m) => m.id === id)?.label || id; },
+    unitFor(media) { return media === "comic" ? "issues" : "chapters"; },
+    ago(iso) {
+      if (!iso) return "never";
+      const s = (Date.now() - new Date(iso).getTime()) / 1000;
+      if (s < 0) { const f = -s; return f < 90 ? "in a minute" : f < 5400 ? `in ${Math.round(f / 60)} min` : `in ${Math.round(f / 3600)} h`; }
+      if (s < 60) return "just now";
+      if (s < 3600) return `${Math.round(s / 60)} min ago`;
+      if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+      return `${Math.round(s / 86400)} d ago`;
+    },
+    badgeFor(item) {
+      if (item.request) return { label: STATUS_LABEL[item.request.status] || item.request.status, tone: STATUS_TONE[item.request.status] || "" };
+      if (item.in_library) return { label: "In library", tone: "ok" };
+      return null;
+    },
+    fmtBytes(n) { if (!n) return "0 B"; const u = ["B", "KB", "MB", "GB"]; let i = 0; while (n >= 1024 && i < 3) { n /= 1024; i++; } return `${n.toFixed(i ? 1 : 0)} ${u[i]}`; },
+    fmtDuration(s) { if (s == null) return ""; if (s < 120) return `${s}s`; if (s < 7200) return `${Math.round(s / 60)} min`; if (s < 172800) return `${Math.round(s / 3600)} h`; return `${Math.round(s / 86400)} days`; },
+
+    // ---------------------------------------------------------------- discover
+    setMedia(id) {
+      this.media = id;
+      if (this.tab === "discover") this.loadRows(id);
+      if (this.tab === "search" && this.q.trim()) this.runSearch();
+    },
+    async loadRows(media, force) {
+      if (!media) return;
+      if (this.rows[media] && !force && Date.now() - this.rows[media].at < 60000) return;
+      this.rows[media] = { ...(this.rows[media] || { rows: [] }), loading: true, error: "" };
+      try {
+        const r = await api("GET", `api/discover?media_type=${media}`);
+        this.rows[media] = { loading: false, error: "", rows: r.rows, at: Date.now() };
+      } catch (e) {
+        if (e.status === 401) return this.showLogin();
+        this.rows[media] = { loading: false, error: e.message, rows: [], at: 0 };
+      }
+    },
+    get currentRows() { return this.rows[this.media]?.rows || []; },
+    get visibleRows() { return this.currentRows.filter((r) => r.items.length || r.pending); },
+    async refreshDiscoverNow(media) {
+      try {
+        const r = await api("POST", "api/admin/discover/refresh", { media: media === "comic" ? "comic" : (media ? "manga" : "all") });
+        this.pageMsg = { ok: true, message: r.message };
+        this.flash(r.message);
+      } catch (e) { this.pageMsg = { ok: false, message: e.message }; this.flash(e.message, false); }
+    },
+    toast: null,
+    flash(message, ok = true) { this.toast = { message, ok }; clearTimeout(this._toastT); this._toastT = setTimeout(() => (this.toast = null), 4000); },
+
+    // ---------------------------------------------------------------- search
+    async runSearch() {
+      const q = this.q.trim();
+      if (!q || !this.media) return;
+      this.searching = true; this.searchError = ""; this.searched = q;
+      try {
+        this.results = (await api("GET", `api/search?media_type=${this.media}&q=${encodeURIComponent(q)}`)).results;
+      } catch (e) {
+        if (e.status === 401) return this.showLogin();
+        this.results = []; this.searchError = e.message;
+      } finally { this.searching = false; }
+    },
+
+    // ---------------------------------------------------------------- details + request
+    async openItem(item) {
+      this.detail = { ...item }; this.detailMsg = null;
+      this.loadQuota();
+      if (item.provider === "comicvine" && item.description) return;
+      try {
+        const full = await api("GET", `api/titles/${item.media_type}/${item.provider}/${item.external_id}`);
+        if (this.detail?.key === item.key) this.detail = { ...item, ...full };
+      } catch { /* the card's data is enough to request */ }
+    },
+    closeDetail() { this.detail = null; },
+    async loadQuota() { try { this.quota = await api("GET", "api/requests/quota"); } catch { this.quota = null; } },
+    async requestItem(item) {
+      this.detailBusy = true; this.detailMsg = null;
+      try {
+        const r = await api("POST", "api/requests", {
+          media_type: item.media_type, provider: item.provider, external_id: item.external_id,
+          hints: { title: item.title, year: item.year, cover_url: item.cover_url, publisher: item.publisher,
+                   issue_count: item.issue_count, alt_titles: item.alt_titles, anilist_id: item.anilist_id },
+        });
+        const state = { id: r.id, status: r.status, mine: true };
+        this.markRequested(item.key, state);
+        if (this.detail) this.detail.request = state;
+        this.detailMsg = { ok: true, message: r.status === "pending" ? "Requested — waiting for an admin to approve." : "Requested! It's on its way." };
+        this.loadQuota();
+      } catch (e) {
+        if (e.status === 409 && e.detail?.status) {
+          const state = { id: e.detail.request_id, status: e.detail.status, mine: false };
+          this.markRequested(item.key, state); if (this.detail) this.detail.request = state;
+        }
+        this.detailMsg = { ok: false, message: e.message };
+      } finally { this.detailBusy = false; }
+    },
+    markRequested(key, state) {
+      for (const r of this.results) if (r.key === key) r.request = state;
+      for (const m of Object.values(this.rows)) for (const row of m.rows || []) for (const i of row.items) if (i.key === key) i.request = state;
+    },
+
+    // ---------------------------------------------------------------- requests
+    async loadRequests() {
+      const r = this.reqs; r.loading = true; r.error = "";
+      const params = new URLSearchParams({ scope: r.scope, limit: "200" });
+      if (r.status) params.set("status", r.status);
+      if (r.media) params.set("media_type", r.media);
+      if (r.q.trim()) params.set("q", r.q.trim());
+      try {
+        const data = await api("GET", `api/requests?${params}`);
+        r.list = data.requests; r.total = data.total; r.counts = data.counts;
+      } catch (e) {
+        if (e.status === 401) return this.showLogin();
+        r.error = e.message;
+      } finally { r.loading = false; this.schedulePoll(); }
+    },
+    setReqScope(scope) { this.reqs.scope = scope; this.loadRequests(); },
+    setReqStatus(s) { this.reqs.status = s; this.loadRequests(); },
+    countFor(id) {
+      const c = this.reqs.counts || {};
+      if (id === "") return Object.values(c).reduce((a, b) => a + b, 0);
+      if (id === "active") return Object.entries(c).filter(([k]) => !["in_library", "failed", "denied"].includes(k)).reduce((a, [, n]) => a + n, 0);
+      return c[id] || 0;
+    },
+    schedulePoll() {
+      clearTimeout(this.pollTimer);
+      const watching = this.tab === "requests" && this.reqs.list.some((r) => BUSY_STATUSES.has(r.status));
+      const jobsRunning = this.tab === "admin" && this.adminPage === "jobs" && this.jobs?.jobs?.some((j) => j.running);
+      if (watching || jobsRunning) this.pollTimer = setTimeout(() => (jobsRunning ? this.loadJobs() : this.loadRequests()), 2500);
+    },
+    async reqAction(r, action, body) {
+      this.reqMsg[r.id] = { busy: true };
+      try {
+        let updated;
+        if (action === "delete") { await api("DELETE", `api/requests/${r.id}`); this.reqs.list = this.reqs.list.filter((x) => x.id !== r.id); this.reqMsg[r.id] = null; this.loadRequests(); return; }
+        updated = await api("POST", `api/requests/${r.id}/${action}`, body);
+        Object.assign(r, updated);
+        this.reqMsg[r.id] = { ok: true, message: { approve: "Approved", deny: "Denied", retry: "Retrying…", refresh: "Refreshed" }[action] || "Done" };
+        this.schedulePoll();
+      } catch (e) { this.reqMsg[r.id] = { ok: false, message: e.message }; }
+    },
+    confirmDelete(r) {
+      const what = r.downloader_ref ? " It stays in the downloader — remove it there too if you want it gone." : "";
+      if (confirm(`Remove the request for “${r.title}”?${what}`)) this.reqAction(r, "delete");
+    },
+    denyPrompt(r) {
+      const reason = prompt(`Deny “${r.title}”? Optional reason shown to the requester:`, "");
+      if (reason !== null) this.reqAction(r, "deny", { reason });
+    },
+    canCancel(r) { return r.mine && ["pending", "failed", "denied", "waiting_for_source", "waiting_for_downloader"].includes(r.status); },
+
+    // choose source (manga)
+    async openPicker(r, q) {
+      this.picker = { req: r, q: q ?? "", loading: true, error: "", candidates: [], errors: [], sources: [], source: this.picker?.source || "" };
+      await this.searchPicker();
+    },
+    async searchPicker() {
+      const p = this.picker; if (!p) return;
+      p.loading = true; p.error = "";
+      const params = new URLSearchParams();
+      if (p.q.trim()) params.set("q", p.q.trim());
+      if (p.source) params.set("source_id", p.source);
+      try {
+        const r = await api("GET", `api/requests/${p.req.id}/candidates?${params}`);
+        Object.assign(p, { candidates: r.candidates, errors: r.errors, sources: r.sources, titles: r.titles });
+        if (!p.q) p.q = "";
+      } catch (e) { p.error = e.message; p.candidates = []; }
+      finally { p.loading = false; }
+    },
+    async pickCandidate(c) {
+      const p = this.picker; if (!p) return;
+      p.loading = true;
+      try {
+        const updated = await api("POST", `api/requests/${p.req.id}/source`, { source_id: c.source_id, manga_id: c.manga_id, title: c.title });
+        Object.assign(p.req, updated);
+        this.picker = null;
+        this.flash(`Sent to ${updated.source_name}.`);
+      } catch (e) { p.error = e.message; p.loading = false; }
+    },
+
+    // ---------------------------------------------------------------- admin: discover / jobs / logs
+    async loadDiscoverStatus() { try { this.discoverStatus = await api("GET", "api/admin/discover/status"); } catch (e) { this.pageMsg = { ok: false, message: e.message }; } },
+    async rematch() {
+      try { const r = await api("POST", "api/admin/discover/rematch"); this.pageMsg = { ok: true, message: r.message }; this.loadDiscoverStatus(); }
+      catch (e) { this.pageMsg = { ok: false, message: e.message }; }
+    },
+    async loadJobs() {
+      try { this.jobs = await api("GET", "api/admin/jobs"); } catch (e) { this.pageMsg = { ok: false, message: e.message }; }
+      this.schedulePoll();
+    },
+    async runJob(j) {
+      try { await api("POST", `api/admin/jobs/${j.id}/run`); j.running = true; this.flash(`${j.label} started.`); setTimeout(() => this.loadJobs(), 800); }
+      catch (e) { this.flash(e.message, false); }
+    },
+    async loadLogsPage() {
+      const [about, audit, importInfo] = await Promise.all([
+        api("GET", "api/admin/about"), api("GET", "api/admin/audit?limit=100"), api("GET", "api/admin/import/v1"),
+      ]);
+      this.about = about; this.audit = audit.entries; this.importInfo = importInfo;
+      this.loadLogs();
+    },
+    async loadLogs() {
+      this.logs.loading = true;
+      try {
+        const p = new URLSearchParams({ level: this.logs.level, lines: "400" });
+        if (this.logs.q.trim()) p.set("q", this.logs.q.trim());
+        this.logs.entries = (await api("GET", `api/admin/logs?${p}`)).entries.reverse();
+      } catch (e) { this.pageMsg = { ok: false, message: e.message }; }
+      finally { this.logs.loading = false; }
+    },
+    logExtras(e) {
+      const skip = new Set(["ts", "level", "logger", "msg", "exc"]);
+      return Object.entries(e).filter(([k]) => !skip.has(k)).map(([k, v]) => `${k}=${v}`).join("  ");
+    },
+    async checkUpdate() { this.update = { loading: true }; try { this.update = await api("GET", "api/admin/update-check"); } catch (e) { this.update = { ok: false, message: e.message }; } },
+    async rawUpload(method, path, file, contentType) {
+      const res = await fetch(path, { method, body: file, credentials: "same-origin",
+        headers: { "Content-Type": contentType || "application/octet-stream", "X-CSRF-Token": csrfToken } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { const d = data.detail; throw new Error((d && typeof d === "object" ? d.message : d) || `HTTP ${res.status}`); }
+      return data;
+    },
+    async importSettingsFile(event) {
+      const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
+      try {
+        const r = await this.rawUpload("POST", "api/admin/settings/import", file, "application/json");
+        this.importMsg = { ok: true, message: r.message };
+        this.values = {}; await this.ensureSettings();
+        await this.refreshSite();
+      } catch (e) { this.importMsg = { ok: false, message: e.message }; }
+    },
+    async importV1(mode, event) {
+      this.importMsg = { ok: true, message: "Importing…" };
+      try {
+        let r;
+        if (mode === "upload") {
+          const file = event.target.files?.[0]; event.target.value = ""; if (!file) { this.importMsg = null; return; }
+          r = await this.rawUpload("PUT", "api/admin/import/v1/upload", file);
+        } else r = await api("POST", "api/admin/import/v1/mounted");
+        this.importMsg = { ok: true, message: r.summary + (r.warnings.length ? ` ${r.warnings.length} warning(s).` : "") };
+        this.importInfo = await api("GET", "api/admin/import/v1");
+      } catch (e) { this.importMsg = { ok: false, message: e.message }; }
+    },
 
     // ---------------------------------------------------------------- users
     async loadUsers() { this.users = await api("GET", "api/admin/users"); },
@@ -408,6 +701,8 @@ document.addEventListener("alpine:init", () => {
       this.admin = null;
       this.schema = []; this.values = {}; this.draft = {}; this.secretDraft = {}; this.secretClear = {};
       this.opts = {}; this.users = []; this.testResult = {};
+      this.rows = {}; this.results = []; this.detail = null; this.picker = null; this.quota = null;
+      this.reqs.list = []; this.reqs.scope = "mine";
       history.replaceState(null, "", location.pathname);
       this.showLogin();
     },

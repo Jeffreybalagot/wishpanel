@@ -7,9 +7,11 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy import func, select
 
 from app import __version__
 from app.api.deps import AdminUser, Ctx, Settings
+from app.db.models import Request as RequestRow
 
 health_router = APIRouter(tags=["system"])
 router = APIRouter(tags=["system"])
@@ -73,7 +75,7 @@ _CONNECTIONS: list[tuple[str, str, str | None]] = [
 
 @router.get("/api/admin/overview")
 async def admin_overview(_: AdminUser, settings: Settings, ctx: Ctx) -> dict[str, Any]:
-    """Read-only snapshot for the Milestone 1 Admin tab. Secrets are masked."""
+    """Read-only snapshot for the Admin overview. Secrets are masked."""
     connections = []
     for label, url_key, secret_key in _CONNECTIONS:
         url = await settings.get(url_key) if url_key else ""
@@ -92,6 +94,14 @@ async def admin_overview(_: AdminUser, settings: Settings, ctx: Ctx) -> dict[str
         "connections": connections,
         "health": health,
         "services": await ctx.health.services(),
+        "requests": {
+            st: n
+            for st, n in (
+                await settings.db.execute(
+                    select(RequestRow.status, func.count()).group_by(RequestRow.status)
+                )
+            ).all()
+        },
     }
 
 

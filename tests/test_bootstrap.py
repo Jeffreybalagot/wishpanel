@@ -29,7 +29,7 @@ def test_migrations_create_tables_and_defaults(client: TestClient, cfg) -> None:
     }
     assert {"settings", "users", "sessions", "audit_log", "alembic_version"} <= tables
     [(version,)] = db_rows(cfg.db_path, "SELECT version_num FROM alembic_version")
-    assert version == "0001_initial"
+    assert version == "0002_requests_discover_jobs"
     keys = {r[0] for r in db_rows(cfg.db_path, "SELECT key FROM settings")}
     assert {"kavita.url", "kavita.api_key", "general.site_name", "setup.completed"} <= keys
 

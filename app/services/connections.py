@@ -13,11 +13,14 @@ from typing import Any
 
 import httpx
 
+from app.domain import ConnectionTestResult
 from app.providers.base import ProviderError
 from app.providers.downloaders.kapowarr import KapowarrDownloader
 from app.providers.downloaders.suwayomi import SuwayomiDownloader
 from app.providers.library.kavita import KavitaLibraryChecker
+from app.providers.metadata.anilist import AniListProvider
 from app.providers.metadata.comicvine import ComicVineMetadataProvider
+from app.providers.metadata.mangabaka import MangaBakaProvider
 from app.services.settings import SettingsService, deserialise, serialise
 from app.services.settings_registry import REGISTRY
 
@@ -26,6 +29,24 @@ SERVICE_KEYS: dict[str, tuple[str, ...]] = {
     "kapowarr": ("kapowarr.url", "kapowarr.api_key"),
     "suwayomi": ("suwayomi.url", "suwayomi.auth_mode", "suwayomi.username", "suwayomi.password"),
     "comicvine": ("comicvine.api_key",),
+    "anilist": (
+        "anilist.exclude_adult",
+        "anilist.country.JP",
+        "anilist.country.KR",
+        "anilist.country.CN",
+        "anilist.country.TW",
+    ),
+    "mangabaka": ("mangabaka.content_ratings",),
+    "manga-metadata": (
+        "anilist.enabled",
+        "anilist.exclude_adult",
+        "anilist.country.JP",
+        "anilist.country.KR",
+        "anilist.country.CN",
+        "anilist.country.TW",
+        "mangabaka.enabled",
+        "mangabaka.content_ratings",
+    ),
 }
 
 # options id -> service that provides it
@@ -34,6 +55,54 @@ OPTION_SOURCES: dict[str, str] = {
     "kapowarr.root_folders": "kapowarr",
     "suwayomi.sources": "suwayomi",
 }
+
+
+def _discover_rows(media: str) -> Any:
+    def load() -> list[Option]:
+        from app.domain import MediaType
+        from app.services.discover import row_options
+
+        return [Option(i, label) for i, label in row_options(MediaType(media))]
+
+    return load
+
+
+def _characters() -> list[Option]:
+    from app.providers.discover.cbh import CHARACTERS
+
+    return [
+        Option(name, name, "reading order" if path else "ComicVine")
+        for name, (path, _) in sorted(CHARACTERS.items())
+    ]
+
+
+# Lists that don't need a connection (built-in catalogues).
+STATIC_OPTIONS = {
+    "discover.comic_rows": _discover_rows("comic"),
+    "discover.manga_rows": _discover_rows("manga"),
+    "discover.manhwa_rows": _discover_rows("manhwa"),
+    "discover.characters": _characters,
+}
+
+
+class _MangaMetadataTester:
+    """The AniList / MangaBaka page tests both services with one button."""
+
+    def __init__(self, anilist: Any, mangabaka: Any) -> None:
+        self.anilist, self.mangabaka = anilist, mangabaka
+
+    async def test_connection(self) -> ConnectionTestResult:
+        if not self.anilist and not self.mangabaka:
+            return ConnectionTestResult(False, "Both are turned off — manga search won't work.")
+        parts, ok = [], True
+        for label, p in (("AniList", self.anilist), ("MangaBaka", self.mangabaka)):
+            if p is None:
+                parts.append(f"{label}: off")
+                continue
+            r = await p.test_connection()
+            ok = ok and r.ok
+            parts.append(r.message if r.ok else f"{label}: {r.message}")
+        return ConnectionTestResult(ok, " · ".join(parts))
 
 
 class UnknownService(KeyError):
@@ -85,6 +154,19 @@ def build(service: str, values: Mapping[str, Any], http: httpx.AsyncClient) -> A
             )
         case "comicvine":
             return ComicVineMetadataProvider(http, values["comicvine.api_key"])
+        case "anilist":
+            return AniListProvider(
+                http,
+                exclude_adult=values["anilist.exclude_adult"],
+                country_map={c: values[f"anilist.country.{c}"] for c in ("JP", "KR", "CN", "TW")},
+            )
+        case "mangabaka":
+            return MangaBakaProvider(http, content_ratings=values["mangabaka.content_ratings"])
+        case "manga-metadata":
+            return _MangaMetadataTester(
+                build("anilist", values, http) if values["anilist.enabled"] else None,
+                build("mangabaka", values, http) if values["mangabaka.enabled"] else None,
+            )
     raise UnknownService(service)
 
 
@@ -104,6 +186,8 @@ async def load_options(
     overrides: Mapping[str, Any] | None = None,
 ) -> list[Option]:
     """Live dropdown contents. Raises ProviderError with an admin-facing message."""
+    if option_id in STATIC_OPTIONS:
+        return STATIC_OPTIONS[option_id]()
     service = OPTION_SOURCES.get(option_id)
     if service is None:
         raise UnknownService(option_id)

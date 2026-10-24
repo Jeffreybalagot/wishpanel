@@ -19,6 +19,7 @@ dependencies = [
     "httpx>=0.27,<1.0",
     "cryptography>=43",
     "pydantic>=2.7,<3",
+    "beautifulsoup4>=4.12",
 ]
 
 [project.optional-dependencies]
