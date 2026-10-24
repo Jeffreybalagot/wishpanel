@@ -404,8 +404,7 @@ async def backfill_matches(ctx: AppContext, db: AsyncSession, settings: Settings
         for v in vols:
             for m in by_id.get(int(v.external_id), []):
                 m.publisher = v.publisher or m.publisher
-                if v.cover_url and "blank" not in v.cover_url.lower():
-                    m.cover_url = v.cover_url
+                m.cover_url = v.cover_url  # None when ComicVine only has its placeholder
                 m.issues = v.issue_count or m.issues
                 m.name = v.title or m.name
                 fixed += 1
