@@ -104,7 +104,16 @@ class ComicVineMetadataProvider:
             "/search/",
             {"query": query, "resources": "volume", "limit": limit, "field_list": VOLUME_FIELDS},
         )
-        return [volume_to_result(v) for v in results or [] if isinstance(v, dict) and v.get("id")]
+        found = [volume_to_result(v) for v in results or [] if isinstance(v, dict) and v.get("id")]
+        if found and not any(r.publisher for r in found):
+            # /search/ often omits the publisher; one /volumes/ call fills it in (order kept).
+            try:
+                ids = [int(r.external_id) for r in found]
+                detailed = {r.external_id: r for r in await self.volumes_by_ids(ids)}
+                found = [detailed.get(r.external_id, r) for r in found]
+            except ProviderError:
+                pass
+        return found
 
     async def get_details(self, external_id: str) -> SearchResult:
         if not str(external_id).isdigit():

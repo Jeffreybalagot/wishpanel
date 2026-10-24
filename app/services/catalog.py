@@ -85,7 +85,7 @@ async def search(
     query = " ".join(query.split())[:120]
     if len(query) < 2:
         return []
-    key = f"search:{media_type.value}:{norm(query)}"
+    key = f"search2:{media_type.value}:{norm(query)}"
     if (hit := await cache.get(db, key)) is not None:
         return [from_json(d) for d in hit]
 
