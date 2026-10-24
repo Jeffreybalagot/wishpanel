@@ -12,7 +12,7 @@
   <Category>MediaServer:Books MediaApp:Books Tools:</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Jeffreybalagot/wishpanel/main/unraid/wishpanel.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/Jeffreybalagot/wishpanel/main/app/web/static/favicon.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/Jeffreybalagot/wishpanel/main/app/web/static/icon-256.png</Icon>
   <Shell>sh</Shell>
   <Config Name="WebUI Port" Target="8080" Default="5658" Mode="tcp" Description="Port for the web interface" Type="Port" Display="always" Required="true" Mask="false">5658</Config>
   <Config Name="Config" Target="/config" Default="/mnt/user/appdata/wishpanel" Mode="rw" Description="Database, encryption key and logs" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/wishpanel</Config>

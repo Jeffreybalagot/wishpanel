@@ -18,9 +18,9 @@ from app.main import create_app
 KAVITA = "http://kavita.test:5000"
 
 USERS = {
-    # username: (password, roles)
-    "admin": ("adminpw", ["Admin", "Pleb"]),
-    "reader": ("readerpw", ["Pleb"]),
+    # username: (password, roles, kavita user id)
+    "admin": ("adminpw", ["Admin", "Pleb"], 1),
+    "reader": ("readerpw", ["Pleb"], 2),
 }
 
 
@@ -41,6 +41,7 @@ def _kavita_login(request: httpx.Request) -> httpx.Response:
     return httpx.Response(
         200,
         json={
+            "id": user[2],
             "username": body["username"],
             "email": f"{body['username']}@example.com",
             "token": token,
@@ -100,3 +101,8 @@ def setup_done(client: TestClient) -> dict:
 def db_rows(db_path: Path, sql: str) -> list[tuple]:
     with closing(sqlite3.connect(db_path)) as con:
         return con.execute(sql).fetchall()
+
+
+def admin_headers(setup: dict) -> dict[str, str]:
+    """CSRF header for state-changing admin calls."""
+    return {"X-CSRF-Token": setup["csrf_token"]}

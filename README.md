@@ -8,7 +8,7 @@ Kavita account, find a title, and request it — WishPanel hands it to the right
 
 WishPanel never downloads anything itself; it's a thin, friendly orchestration layer.
 
-> **Status: Milestone 1.1 of 5 (hardened skeleton).** Kavita sign-in, first-run setup, encrypted
+> **Status: Milestone 2 of 5 (admin settings).** Kavita sign-in, first-run setup, encrypted
 > settings storage, health checks and the UI shell work today. Settings pages, requests,
 > discover and search arrive in Milestones 2–4. See [`SPEC.md`](SPEC.md) for the plan.
 

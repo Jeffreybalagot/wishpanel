@@ -108,3 +108,37 @@ checks; UI and vendored Alpine served; PID 1 runs as the requested PUID (1001), 
 `secret.key`, `setup-code.txt`, `wishpanel.db` owned by PUID:PGID, key and code mode 0600;
 setup code printed in the log; wrong/missing code rejected on claim and Kavita test; right code
 accepted; after `docker restart` it's healthy again with the same key and code.
+
+## Milestone 2 (admin settings)
+
+**Schema-driven pages** — `app/services/settings_pages.py` lists every page, field, widget and
+help text; the frontend renders from `GET /api/admin/settings/schema`. Only keys on a page are
+writable through the API, so internal state (`setup.completed`, `setup.claim_hash`,
+`general.logo_version`) can never be changed from the browser. A startup check fails fast if a
+page references an unknown key or a secret field uses a non-secret widget.
+
+**Saving is all-or-nothing** — the whole payload is validated before anything is written; a bad
+field returns `422 {key, message}` and the UI highlights it.
+
+**Test before save** — Test buttons and dropdowns post the form's current values; any secret the
+admin hasn't retyped is taken from storage. Testing never saves.
+
+**Kavita URL guard** — Kavita is the login provider, so a changed Kavita URL must answer
+`/api/health` before it's saved; otherwise a typo would lock everyone out.
+
+**API shapes verified** — Kavita against its published `openapi.json` (0.9.1: `x-api-key`
+header, `/api/Library/libraries`, `/api/Library/scan`, with the `/api/Plugin/authenticate`
+fallback for older servers); Kapowarr against its source (`/api/system/about`,
+`/api/rootfolder`, `api_key` query parameter); Suwayomi by querying Jeff's v2.4.2366 instance
+(`aboutServer`, `sources`, `login` mutation, auth modes NONE/BASIC_AUTH/SIMPLE_LOGIN/UI_LOGIN);
+ComicVine's documented `status_code` (1 OK, 100 bad key, 107 rate limited).
+
+**Stable user ids** — Kavita's login response includes a numeric `id`; users are now keyed
+`id:<n>`. Rows from 2.0.0a2 (keyed by lower-cased username) are re-keyed on the next sign-in.
+
+**Logo** — PNG/JPEG/WebP only, detected by magic bytes, ≤512 KB, stored in `/config/branding`.
+SVG is refused because it can carry script.
+
+**Not in M2** — Media Types mapping, Requests, AniList/MangaBaka, Discover, Jobs and Logs pages
+are visible in the nav but marked for their milestones. Per-user limits and auto-approve are
+stored now and enforced when requests exist (M3).

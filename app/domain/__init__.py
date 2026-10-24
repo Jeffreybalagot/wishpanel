@@ -40,6 +40,8 @@ class AuthenticatedUser:
     username: str
     email: str | None = None
     roles: tuple[str, ...] = ()
+    # Older identifiers for the same account; a matching user row is re-keyed.
+    legacy_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

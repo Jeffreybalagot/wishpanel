@@ -6,6 +6,7 @@ on the very next request — no restart, no cache invalidation bugs).
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Iterable
 from typing import Any
@@ -21,6 +22,8 @@ from app.services.settings_registry import REGISTRY, SettingDef, SettingType
 log = logging.getLogger(__name__)
 
 _TRUE = {"1", "true", "yes", "on"}
+LIST_MAX_ITEMS = 500
+LIST_ITEM_MAX_LEN = 200
 _FALSE = {"0", "false", "no", "off", ""}
 
 
@@ -66,6 +69,23 @@ def serialise(defn: SettingDef, value: Any) -> str:
             if text not in defn.choices:
                 raise SettingValidationError(key, f"must be one of: {', '.join(defn.choices)}")
             return text
+        case SettingType.LIST:
+            if isinstance(value, str):
+                value = [line for line in value.replace(",", "\n").splitlines()]
+            if not isinstance(value, list | tuple):
+                raise SettingValidationError(key, "must be a list")
+            items: list[str] = []
+            for item in value:
+                text = str(item).strip()
+                if not text:
+                    continue
+                if len(text) > LIST_ITEM_MAX_LEN:
+                    raise SettingValidationError(key, "an entry is too long")
+                if text not in items:  # keep first occurrence: order = priority
+                    items.append(text)
+            if len(items) > LIST_MAX_ITEMS:
+                raise SettingValidationError(key, f"at most {LIST_MAX_ITEMS} entries")
+            return json.dumps(items, ensure_ascii=False)
         case SettingType.URL:
             text = str(value).strip().rstrip("/")
             if text:
@@ -90,6 +110,12 @@ def deserialise(defn: SettingDef, raw: str | None) -> Any:
                 return int(raw)
             except ValueError:
                 return defn.default
+        case SettingType.LIST:
+            try:
+                parsed = json.loads(raw) if raw else []
+            except ValueError:
+                return list(defn.default or ())
+            return [str(x) for x in parsed] if isinstance(parsed, list) else []
         case _:
             return raw
 

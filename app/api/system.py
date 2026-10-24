@@ -29,6 +29,7 @@ class SiteInfo(BaseModel):
     default_tab: str
     theme: str
     media_types: dict[str, bool]
+    logo_version: int  # 0 = default star; >0 = custom logo at api/branding/logo?v=N
 
 
 @router.get("/api/system/info", response_model=SiteInfo)
@@ -43,6 +44,7 @@ async def site_info(settings: Settings) -> SiteInfo:
             "media.comic.enabled",
             "media.manga.enabled",
             "media.manhwa.enabled",
+            "general.logo_version",
         ]
     )
     return SiteInfo(
@@ -56,6 +58,7 @@ async def site_info(settings: Settings) -> SiteInfo:
             "manga": s["media.manga.enabled"],
             "manhwa": s["media.manhwa.enabled"],
         },
+        logo_version=s["general.logo_version"],
     )
 
 

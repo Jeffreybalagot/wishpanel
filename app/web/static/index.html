@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>WishPanel</title>
   <link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="static/icon-256.png">
   <link rel="stylesheet" href="static/app.css">
   <script src="static/app.js" defer></script>
   <script src="static/vendor/alpine-3.17.5.min.js" defer></script>
@@ -106,7 +107,9 @@
   <!-- ============ App shell ============ -->
   <div class="shell" x-show="view === 'app'">
     <header class="topbar">
-      <a class="brand" href="#/discover"><span class="logo" aria-hidden="true"></span>
+      <a class="brand" href="#/discover">
+        <img class="brand-img" x-show="logoUrl" :src="logoUrl" alt="">
+        <span class="logo" x-show="!logoUrl" aria-hidden="true"></span>
         <span x-text="site.site_name"></span></a>
       <nav class="tabs" aria-label="Main">
         <template x-for="t in visibleTabs" :key="t.id">
@@ -163,12 +166,17 @@
       <!-- Admin -->
       <section x-show="tab === 'admin' && me?.is_admin" class="admin">
         <aside class="admin-nav">
-          <template x-for="p in adminPages" :key="p.id">
-            <button class="admin-link" :class="{ active: adminPage === p.id }"
-                    @click="adminPage = p.id" x-text="p.label"></button>
+          <template x-for="p in adminNav" :key="p.id">
+            <a class="admin-link" :href="p.id === 'overview' ? '#/admin' : '#/admin/' + p.id"
+               :class="{ active: adminPage === p.id, later: p.milestone }">
+              <span x-text="p.label"></span>
+              <span class="dirty-dot" x-show="p.schema && schema.length && pageDirty(p.id)" title="Unsaved changes"></span>
+            </a>
           </template>
         </aside>
         <div class="admin-body">
+
+          <!-- Overview -->
           <template x-if="adminPage === 'overview'">
             <div>
               <h1 class="page-title">Overview</h1>
@@ -189,7 +197,7 @@
                     <span x-text="admin?.services?.status || '…'"></span></p>
                   <template x-for="(c, name) in (admin?.services?.services || {})" :key="name">
                     <p class="sm"><span class="dot" :class="c.status"></span>
-                      <span class="cap" x-text="name"></span>:
+                      <a class="cap link" :href="'#/admin/' + name" x-text="name"></a>:
                       <span class="muted" x-text="c.message || c.status.replace('_', ' ')"></span></p>
                   </template>
                 </div>
@@ -204,7 +212,7 @@
                 <tbody>
                   <template x-for="c in (admin?.connections || [])" :key="c.name">
                     <tr>
-                      <td x-text="c.name"></td>
+                      <td><a class="link" :href="'#/admin/' + c.name.toLowerCase()" x-text="c.name"></a></td>
                       <td class="mono sm" x-text="c.url || '—'"></td>
                       <td class="mono sm" x-text="c.secret || '—'"></td>
                       <td><span class="pill" :class="c.configured ? 'ok' : ''"
@@ -213,14 +221,247 @@
                   </template>
                 </tbody>
               </table>
-              <p class="muted sm">Editing these connections, with Test buttons and live dropdowns,
-                is Milestone 2.</p>
             </div>
           </template>
-          <template x-if="adminPage !== 'overview'">
+
+          <!-- Schema-driven settings pages -->
+          <template x-if="navItem(adminPage)?.schema && page">
+            <form class="settings" @submit.prevent="savePage()" autocomplete="off">
+              <div class="settings-head">
+                <div>
+                  <h1 class="page-title" x-text="page.title"></h1>
+                  <p class="muted" x-text="page.description"></p>
+                </div>
+              </div>
+
+              <!-- Logo (General page) -->
+              <template x-if="page.actions.includes('general.logo')">
+                <div class="field-row">
+                  <div class="field-label"><span>Logo</span>
+                    <small class="muted">PNG, JPEG or WebP, up to 512 KB. Square works best.</small></div>
+                  <div class="field-input logo-row">
+                    <span class="logo-preview">
+                      <img x-show="logoUrl" :src="logoUrl" alt="">
+                      <span x-show="!logoUrl" class="logo" aria-hidden="true"></span>
+                    </span>
+                    <label class="btn ghost sm file-btn">Upload…
+                      <input type="file" accept="image/png,image/jpeg,image/webp" @change="uploadLogo($event)" hidden>
+                    </label>
+                    <button type="button" class="btn ghost sm" x-show="logoUrl" @click="removeLogo()">Remove</button>
+                  </div>
+                </div>
+              </template>
+
+              <template x-for="f in page.fields" :key="f.key">
+                <div class="field-row" x-show="visible(f)" :class="{ invalid: fieldErrors[f.key], changed: dirtyKey(f) }">
+                  <label class="field-label" :for="'f-' + f.key">
+                    <span x-text="f.label"></span>
+                    <small class="muted" x-show="f.help" x-text="f.help"></small>
+                  </label>
+                  <div class="field-input">
+
+                    <template x-if="f.widget === 'text' || f.widget === 'url'">
+                      <input :id="'f-' + f.key" :type="f.widget === 'url' ? 'url' : 'text'"
+                             :placeholder="f.placeholder" x-model="draft[f.key]" spellcheck="false">
+                    </template>
+
+                    <template x-if="f.widget === 'number'">
+                      <input :id="'f-' + f.key" type="number" :min="f.min ?? null" x-model.number="draft[f.key]" class="narrow-input">
+                    </template>
+
+                    <template x-if="f.widget === 'toggle'">
+                      <label class="switch">
+                        <input :id="'f-' + f.key" type="checkbox" x-model="draft[f.key]">
+                        <span class="slider" aria-hidden="true"></span>
+                        <span class="sm muted" x-text="draft[f.key] ? 'On' : 'Off'"></span>
+                      </label>
+                    </template>
+
+                    <template x-if="f.widget === 'select'">
+                      <select :id="'f-' + f.key" x-model="draft[f.key]">
+                        <template x-for="c in f.choices" :key="c">
+                          <option :value="c" x-text="f.labels[c] || c" :selected="draft[f.key] === c"></option>
+                        </template>
+                      </select>
+                    </template>
+
+                    <template x-if="f.widget === 'secret'">
+                      <div class="secret-row">
+                        <input :id="'f-' + f.key" type="password" autocomplete="new-password" spellcheck="false"
+                               x-model="secretDraft[f.key]" @input="secretClear[f.key] = false"
+                               :placeholder="secretClear[f.key] ? 'Will be cleared on save'
+                                 : (values[f.key]?.set ? values[f.key].masked + '  (leave blank to keep)' : 'Not set')">
+                        <button type="button" class="btn ghost sm" x-show="values[f.key]?.set && !secretClear[f.key]"
+                                @click="secretClear[f.key] = true; secretDraft[f.key] = ''">Clear</button>
+                        <button type="button" class="btn ghost sm" x-show="secretClear[f.key]"
+                                @click="secretClear[f.key] = false">Undo</button>
+                      </div>
+                    </template>
+
+                    <template x-if="f.widget === 'tags'">
+                      <textarea :id="'f-' + f.key" rows="4" spellcheck="false"
+                                :value="(Array.isArray(draft[f.key]) ? draft[f.key] : []).join('\n')"
+                                @input="draft[f.key] = $event.target.value.split('\n')"></textarea>
+                    </template>
+
+                    <template x-if="f.widget === 'remote-select'">
+                      <div class="remote-row">
+                        <select :id="'f-' + f.key" x-model="draft[f.key]" :disabled="!!opts[f.options]?.loading">
+                          <option value="">— Not set —</option>
+                          <template x-if="unknownSelected(f)">
+                            <option :value="draft[f.key]" x-text="'#' + draft[f.key] + ' (not found)'" selected></option>
+                          </template>
+                          <template x-for="o in optionsFor(f)" :key="o.value">
+                            <option :value="o.value" :selected="draft[f.key] === o.value"
+                                    x-text="o.label + (o.hint ? '  · ' + o.hint : '')"></option>
+                          </template>
+                        </select>
+                        <button type="button" class="btn ghost sm" @click="loadOptions(f.options)"
+                                :disabled="!!opts[f.options]?.loading"
+                                x-text="opts[f.options]?.loading ? 'Loading…' : (optionsFor(f).length ? 'Refresh' : 'Load')"></button>
+                        <small class="error-text" x-show="opts[f.options] && !opts[f.options].ok" x-text="opts[f.options]?.message"></small>
+                      </div>
+                    </template>
+
+                    <template x-if="f.widget === 'source-list'">
+                      <div class="sources">
+                        <div class="sources-col">
+                          <div class="sources-head">Selected — highest priority first</div>
+                          <ol class="source-list">
+                            <template x-for="(id, i) in selectedSources(f)" :key="id">
+                              <li>
+                                <span class="rank" x-text="i + 1"></span>
+                                <span class="grow" x-text="optionLabel(f, id)"></span>
+                                <button type="button" class="icon-btn" title="Move up" @click="moveSource(f, i, -1)" :disabled="i === 0">▲</button>
+                                <button type="button" class="icon-btn" title="Move down" @click="moveSource(f, i, 1)" :disabled="i === selectedSources(f).length - 1">▼</button>
+                                <button type="button" class="icon-btn" title="Remove" @click="removeSource(f, id)">✕</button>
+                              </li>
+                            </template>
+                            <li class="muted sm" x-show="!selectedSources(f).length">None selected — WishPanel will refuse manga requests until you pick at least one.</li>
+                          </ol>
+                        </div>
+                        <div class="sources-col">
+                          <div class="sources-head">
+                            <span>Available</span>
+                            <button type="button" class="btn ghost sm" @click="loadOptions(f.options)"
+                                    x-text="opts[f.options]?.loading ? 'Loading…' : (optionsFor(f).length ? 'Refresh' : 'Load sources')"></button>
+                          </div>
+                          <input type="search" placeholder="Filter…" x-model="sourceFilter" class="sources-filter">
+                          <small class="error-text" x-show="opts[f.options] && !opts[f.options].ok" x-text="opts[f.options]?.message"></small>
+                          <ul class="source-list available">
+                            <template x-for="o in availableSources(f)" :key="o.value">
+                              <li>
+                                <span class="grow" x-text="o.label"></span>
+                                <span class="pill" x-text="o.hint"></span>
+                                <button type="button" class="icon-btn add" title="Add" @click="addSource(f, o.value)">＋</button>
+                              </li>
+                            </template>
+                            <li class="muted sm" x-show="optionsFor(f).length && !availableSources(f).length">Nothing matches the language list or filter.</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </template>
+
+                    <small class="error-text" x-show="fieldErrors[f.key]" x-text="fieldErrors[f.key]"></small>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Kavita scan -->
+              <template x-if="page.actions.includes('kavita.scan')">
+                <div class="field-row">
+                  <div class="field-label"><span>Scan now</span>
+                    <small class="muted">Asks Kavita to rescan the mapped libraries (saved mapping).</small></div>
+                  <div class="field-input remote-row">
+                    <select x-model="scanMedia" class="narrow-input">
+                      <option value="">All mapped libraries</option>
+                      <option value="comic">Comics library</option>
+                      <option value="manga">Manga library</option>
+                      <option value="manhwa">Manhwa library</option>
+                    </select>
+                    <button type="button" class="btn ghost sm" @click="scanKavita()" :disabled="busy">Trigger scan</button>
+                  </div>
+                </div>
+              </template>
+
+              <div class="settings-actions">
+                <div class="notice" x-show="testResult[page.id]"
+                     :class="testResult[page.id]?.loading ? '' : (testResult[page.id]?.ok ? 'ok' : 'bad')"
+                     x-text="testResult[page.id]?.message"></div>
+                <div class="notice" x-show="pageMsg" :class="pageMsg?.ok ? 'ok' : 'bad'" x-text="pageMsg?.message"></div>
+                <div class="row">
+                  <button type="button" class="btn ghost" x-show="page.connection" @click="testPage()"
+                          :disabled="!!testResult[page.id]?.loading">Test</button>
+                  <button type="button" class="btn ghost" x-show="pageDirty(page.id)" @click="discardPage()">Discard</button>
+                  <button type="submit" class="btn" :disabled="busy || !pageDirty(page.id)">Save</button>
+                </div>
+              </div>
+            </form>
+          </template>
+
+          <!-- Users -->
+          <template x-if="adminPage === 'users'">
             <div>
-              <h1 class="page-title" x-text="adminPages.find(p => p.id === adminPage)?.label"></h1>
-              <div class="empty"><p>This settings page is built in Milestone 2.</p></div>
+              <h1 class="page-title">Users</h1>
+              <p class="muted">Everyone who has signed in. Admin comes from the Kavita role; the rest applies immediately.
+                Limits and auto-approve take effect when requests arrive (Milestone 3).</p>
+              <div class="table-wrap">
+                <table class="table users">
+                  <thead><tr>
+                    <th>User</th><th>Last sign-in</th><th>Daily limit</th><th>Auto-approve</th>
+                    <th>Can request</th><th>Access</th>
+                  </tr></thead>
+                  <tbody>
+                    <template x-for="u in users" :key="u.id">
+                      <tr :class="{ blocked: u.is_blocked }">
+                        <td>
+                          <div class="user-cell">
+                            <span class="avatar" x-text="u.username.slice(0,1).toUpperCase()"></span>
+                            <div>
+                              <div><span x-text="u.username"></span>
+                                <span class="pill admin-pill" x-show="u.is_admin">admin</span>
+                                <span class="pill" x-show="u.id === me?.id">you</span></div>
+                              <div class="muted sm" x-text="u.email || ''"></div>
+                            </div>
+                          </div>
+                        </td>
+                        <td class="sm"><span x-text="fmtDate(u.last_login_at)"></span>
+                          <div class="muted sm" x-text="u.active_sessions + ' active session' + (u.active_sessions === 1 ? '' : 's')"></div></td>
+                        <td><input type="number" min="0" class="tiny-input" placeholder="Default"
+                                   :value="u.daily_limit_override ?? ''" @change="userLimitChanged(u, $event.target.value)"></td>
+                        <td>
+                          <select class="tiny-input" :value="u.auto_approve === null ? '' : String(u.auto_approve)"
+                                  @change="patchUser(u, { auto_approve: $event.target.value === '' ? null : $event.target.value === 'true' })">
+                            <option value="">Default</option><option value="true">Yes</option><option value="false">No</option>
+                          </select>
+                        </td>
+                        <td class="media-checks">
+                          <template x-for="m in [{id:'comic',label:'Comics'},{id:'manga',label:'Manga'},{id:'manhwa',label:'Manhwa'}]" :key="m.id">
+                            <label class="check"><input type="checkbox"
+                                   :checked="u.allowed_media_types === null || u.allowed_media_types.includes(m.id)"
+                                   @change="toggleUserMedia(u, m.id, $event.target.checked)"><span x-text="m.label"></span></label>
+                          </template>
+                        </td>
+                        <td>
+                          <button type="button" class="btn sm" :class="u.is_blocked ? '' : 'ghost danger'"
+                                  :disabled="u.id === me?.id" @click="patchUser(u, { is_blocked: !u.is_blocked })"
+                                  x-text="u.is_blocked ? 'Unblock' : 'Block'"></button>
+                          <div class="sm" :class="userMsg[u.id]?.ok === false ? 'error-text' : 'muted'"
+                               x-text="userMsg[u.id]?.saving ? 'Saving…' : (userMsg[u.id]?.message || '')"></div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <!-- Later milestones -->
+          <template x-if="navItem(adminPage)?.milestone">
+            <div>
+              <h1 class="page-title" x-text="navItem(adminPage).label"></h1>
+              <div class="empty"><p>This page arrives in Milestone <span x-text="navItem(adminPage).milestone"></span>.</p></div>
             </div>
           </template>
         </div>

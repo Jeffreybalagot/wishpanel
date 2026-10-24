@@ -39,6 +39,15 @@ async def upsert_user(db: AsyncSession, authed: AuthenticatedUser, is_admin: boo
     user = await db.scalar(
         select(User).where(User.provider == authed.provider, User.external_id == authed.external_id)
     )
+    if user is None and authed.legacy_ids:
+        user = await db.scalar(
+            select(User).where(
+                User.provider == authed.provider, User.external_id.in_(authed.legacy_ids)
+            )
+        )
+        if user is not None:
+            log.info("Re-keyed user to stable provider id", extra={"user": authed.username})
+            user.external_id = authed.external_id
     if user is None:
         user = User(provider=authed.provider, external_id=authed.external_id, username="")
         db.add(user)

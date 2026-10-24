@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app import __version__
 from app.core.crypto import SecretBox
 from app.providers.auth.kavita import KavitaAuthProvider
+from app.services import connections
 from app.services.settings import SettingsService
 
 _EXTERNAL_TTL = 30.0
@@ -52,8 +53,8 @@ class HealthService:
         self.box = box
         self.client = client
         self.config_dir = config_dir
-        self._cache = _Cache()
-        self._lock = asyncio.Lock()
+        self._cache: dict[str, _Cache] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
     # ------------------------------------------------------------ local
     async def local(self) -> tuple[int, dict[str, Any]]:
@@ -83,20 +84,51 @@ class HealthService:
 
     # ------------------------------------------------------------ external
     async def services(self) -> dict[str, Any]:
+        """Reachability of every configured external service, checked concurrently."""
         async with self.sessionmaker() as db:
-            kavita_url = await SettingsService(db, self.box).get("kavita.url")
-        services = {"kavita": await self._kavita(kavita_url)}
+            settings = SettingsService(db, self.box)
+            kavita_url = await settings.get("kavita.url")
+            values = {
+                svc: await connections.resolve_values(settings, svc, None)
+                for svc in ("kapowarr", "suwayomi")
+            }
+            comicvine_set = await settings.is_set("comicvine.api_key")
+
+        async def check(name: str) -> dict[str, Any]:
+            if name == "kavita":
+                if not kavita_url:
+                    return {"status": "not_configured"}
+                return await self._cached(
+                    f"kavita|{kavita_url}",
+                    lambda: KavitaAuthProvider(self.client, kavita_url).test_connection(),
+                )
+            v = values[name]
+            if not v[f"{name}.url"]:
+                return {"status": "not_configured"}
+            key = name + "|" + "|".join(str(v[k]) for k in sorted(v))
+            return await self._cached(
+                key, lambda: connections.build(name, v, self.client).test_connection()
+            )
+
+        names = ("kavita", "kapowarr", "suwayomi")
+        results = await asyncio.gather(*(check(n) for n in names))
+        services = dict(zip(names, results, strict=True))
+        # ComicVine is rate-limited; report configuration only (Test button does a live check).
+        services["comicvine"] = {"status": "configured" if comicvine_set else "not_configured"}
         down = any(s["status"] == "error" for s in services.values())
         return {"status": "degraded" if down else "ok", "services": services}
 
-    async def _kavita(self, url: str) -> dict[str, Any]:
-        if not url:
-            return {"status": "not_configured"}
-        async with self._lock:
-            now = time.monotonic()
-            if self._cache.key == url and now - self._cache.at < _EXTERNAL_TTL:
-                return self._cache.result
-            result = await KavitaAuthProvider(self.client, url).test_connection()
+    async def _cached(self, key: str, run) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+        now = time.monotonic()
+        hit = self._cache.get(key)
+        if hit and now - hit.at < _EXTERNAL_TTL:
+            return hit.result
+        lock = self._locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            hit = self._cache.get(key)
+            if hit and time.monotonic() - hit.at < _EXTERNAL_TTL:
+                return hit.result
+            result = await run()
             out = {"status": "ok"} if result.ok else {"status": "error", "message": result.message}
-            self._cache = _Cache(at=now, key=url, result=out)
+            self._cache[key] = _Cache(at=time.monotonic(), key=key, result=out)
             return out

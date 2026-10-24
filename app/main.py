@@ -14,6 +14,8 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.api import admin_settings as admin_settings_api
+from app.api import admin_users as admin_users_api
 from app.api import auth as auth_api
 from app.api import setup as setup_api
 from app.api import system as system_api
@@ -103,6 +105,9 @@ def create_app(cfg: BootstrapConfig | None = None, *, configure_logs: bool = Tru
     routes.include_router(auth_api.router)
     routes.include_router(setup_api.router)
     routes.include_router(system_api.router)
+    routes.include_router(admin_settings_api.router)
+    routes.include_router(admin_settings_api.public_router)
+    routes.include_router(admin_users_api.router)
     if prefix:
         routes.include_router(system_api.health_router)
     app.include_router(routes, prefix=prefix)

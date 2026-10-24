@@ -154,5 +154,13 @@ def test_admin_overview_requires_admin(client: TestClient, setup_done) -> None:
 
 def test_admin_services_reports_kavita_after_setup(client: TestClient, setup_done) -> None:
     body = client.get("/api/admin/services").json()
-    assert body == {"status": "ok", "services": {"kavita": {"status": "ok"}}}
+    assert body == {
+        "status": "ok",
+        "services": {
+            "kavita": {"status": "ok"},
+            "kapowarr": {"status": "not_configured"},
+            "suwayomi": {"status": "not_configured"},
+            "comicvine": {"status": "not_configured"},
+        },
+    }
     assert client.get("/health").json()["setup_completed"] is True

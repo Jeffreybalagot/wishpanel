@@ -112,13 +112,21 @@ class KavitaAuthProvider:
             raise ProviderError("Kavita returned an unexpected response.")
 
         username_out = str(body["username"])
+        kavita_id = body.get("id")
+        by_name = username_out.lower()
+        if isinstance(kavita_id, int):
+            # Kavita's numeric user id survives username changes. Accounts created
+            # by WishPanel <= 2.0.0a2 were keyed by lower-cased username.
+            external_id, legacy = f"id:{kavita_id}", (by_name,)
+        else:
+            external_id, legacy = by_name, ()
         return AuthenticatedUser(
             provider=self.name,
-            # Kavita usernames are unique and stable; the login DTO has no numeric id.
-            external_id=username_out.lower(),
+            external_id=external_id,
             username=username_out,
             email=body.get("email") or None,
             roles=_extract_roles(body),
+            legacy_ids=legacy,
         )
 
     def is_admin(self, user: AuthenticatedUser, admin_role: str) -> bool:

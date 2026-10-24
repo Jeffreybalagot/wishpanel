@@ -4,6 +4,26 @@ All notable changes to WishPanel are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+### Added — Milestone 2 (admin settings)
+- Settings pages rendered from a server-side schema: General (site name, public URL, logo upload,
+  landing tab, theme, language), Authentication, Library — Kavita, Downloader — Kapowarr,
+  Downloader — Suwayomi, Metadata — ComicVine.
+- Test buttons that call the real service using the values currently in the form (unsaved), with
+  stored secrets used when a secret field is left blank.
+- Live dropdowns: Kavita libraries, Kapowarr root folders, Suwayomi sources (language filter and
+  priority ordering). "Trigger scan" for mapped Kavita libraries.
+- Secrets shown as `••••••••abcd`, never returned in full; clear/undo per secret.
+- Users page: block/unblock (ends sessions immediately), per-user daily limit, auto-approve and
+  allowed media types. Settings and user changes are audited (key names only, never secret values).
+- Kavita library and auth-key support for both 0.8+ `x-api-key` and the older plugin JWT flow.
+- 256×256 PNG icon for the Unraid template.
+
+### Changed — Milestone 2
+- Users are now keyed by Kavita's numeric user id; rows created by 2.0.0a2 are re-keyed on
+  next sign-in, keeping their settings.
+- Admin → Overview shows reachability for Kavita, Kapowarr and Suwayomi (cached 30 s).
+- Changing the Kavita URL is verified before saving, since sign-in depends on it.
+
 ### Added — Milestone 1.1 (hardening)
 - One-time setup claim code: printed to the container log and `/config/setup-code.txt` (0600),
   required for every setup action (claim, Kavita connection test, completion), throttled,
