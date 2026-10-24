@@ -32,6 +32,12 @@ def _year(value: Any) -> int | None:
     return y if 1900 < y < 2200 else None
 
 
+def _cover(image: dict[str, Any]) -> str | None:
+    url = image.get("medium_url") or image.get("small_url") or image.get("original_url")
+    # ComicVine's "no cover" placeholder is a generic "Blank!" image.
+    return None if not url or "blank" in url.rsplit("/", 1)[-1].lower() else url
+
+
 def volume_to_result(v: dict[str, Any]) -> SearchResult:
     image = v.get("image") or {}
     publisher = v.get("publisher") or {}
@@ -43,7 +49,7 @@ def volume_to_result(v: dict[str, Any]) -> SearchResult:
         title=str(v.get("name") or "Untitled"),
         media_type=MediaType.COMIC,
         year=_year(v.get("start_year")),
-        cover_url=image.get("medium_url") or image.get("small_url") or image.get("original_url"),
+        cover_url=_cover(image),
         publisher=publisher.get("name") if isinstance(publisher, dict) else None,
         issue_count=v.get("count_of_issues"),
         provider="comicvine",

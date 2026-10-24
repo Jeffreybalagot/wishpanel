@@ -195,8 +195,11 @@ async def refresh_comics(ctx: AppContext) -> str:
             await db.commit()
         await _prune(db, MediaType.COMIC, keep)
         await db.commit()
+        fixed = await backfill_matches(ctx, db, settings)
     ctx.matcher.wake()
     msg = f"{done} list(s) refreshed, {new_titles} new title(s) queued for matching"
+    if fixed:
+        msg += f", {fixed} cover(s)/publisher(s) filled in"
     if failed:
         msg += f"; {len(failed)} failed ({failed[0]})"
         if not done:
@@ -369,3 +372,42 @@ async def status(db: AsyncSession) -> dict[str, Any]:
             for r in rows
         ],
     }
+
+
+def _needs_backfill(m: MatchCache) -> bool:
+    return not m.publisher or not m.cover_url or "blank" in (m.cover_url or "").lower()
+
+
+async def backfill_matches(ctx: AppContext, db: AsyncSession, settings: SettingsService) -> int:
+    """Fill missing covers/publishers of matched titles (e.g. imported from v1), 100 per call."""
+    if not await settings.get("comicvine.api_key"):
+        return 0
+    rows = [
+        m
+        for m in (await db.scalars(select(MatchCache).where(MatchCache.status == "ok"))).all()
+        if m.comicvine_id and _needs_backfill(m)
+    ]
+    if not rows:
+        return 0
+    cv = await connections.provider_for(settings, "comicvine", ctx.http)
+    fixed = 0
+    by_id: dict[int, list[MatchCache]] = {}
+    for m in rows:
+        by_id.setdefault(int(m.comicvine_id), []).append(m)
+    ids = list(by_id)
+    for i in range(0, min(len(ids), 1000), 100):
+        try:
+            vols = await cv.volumes_by_ids(ids[i : i + 100])
+        except ProviderError as exc:
+            log.warning("Match backfill stopped", extra={"error": exc.message})
+            break
+        for v in vols:
+            for m in by_id.get(int(v.external_id), []):
+                m.publisher = v.publisher or m.publisher
+                if v.cover_url and "blank" not in v.cover_url.lower():
+                    m.cover_url = v.cover_url
+                m.issues = v.issue_count or m.issues
+                m.name = v.title or m.name
+                fixed += 1
+        await db.commit()
+    return fixed
