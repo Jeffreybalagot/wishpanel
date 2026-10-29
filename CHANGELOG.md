@@ -2,6 +2,13 @@
 
 All notable changes to WishPanel are documented here. Format: [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+- Comic requests showed "Could not reach Kapowarr: timed out waiting for a response" even though
+  the volume was added: Kapowarr fetches every issue from ComicVine before answering the add call,
+  which can take over a minute. The add-volume read timeout is now 300 s (connect stays 5 s).
+
 ## [2.0.0] — 2026-10-28
 
 First public release. Everything below (Milestones 1–5) ships in 2.0.0.

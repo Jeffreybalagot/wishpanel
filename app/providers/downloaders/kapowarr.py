@@ -16,6 +16,12 @@ from app.domain import ConnectionTestResult, Folder, MediaType, SearchResult
 from app.providers._util import json_body, status_message
 from app.providers.base import ProviderError
 
+# Adding a volume makes Kapowarr fetch every issue from ComicVine before it answers;
+# long series take well over a minute (86 s seen for a 5-issue volume over the VPN).
+# The POST is not retried, so give it a long read timeout but keep connect short so a
+# stopped Kapowarr still fails fast.
+ADD_VOLUME_TIMEOUT = httpx.Timeout(300.0, connect=5.0)
+
 
 class VolumeNotFound(ProviderError):
     pass
@@ -56,7 +62,7 @@ class KapowarrDownloader:
         method: str = "GET",
         params: dict[str, Any] | None = None,
         json: Any = None,
-        timeout: float | None = None,  # noqa: ASYNC109 - httpx timeout
+        timeout: float | httpx.Timeout | None = None,  # noqa: ASYNC109 - httpx timeout
     ) -> Any:
         if not self.base_url:
             raise ProviderError("Kapowarr URL is not set.")
@@ -155,7 +161,9 @@ class KapowarrDownloader:
             "special_version": "auto",
             "auto_search": auto_search,
         }
-        result = await self._api("/volumes", method="POST", json=payload, timeout=60)
+        result = await self._api(
+            "/volumes", method="POST", json=payload, timeout=ADD_VOLUME_TIMEOUT
+        )
         if not isinstance(result, dict):
             raise ProviderError("Kapowarr returned an unexpected response when adding.")
         if result.get("already_added"):
