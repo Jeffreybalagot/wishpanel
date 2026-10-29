@@ -8,8 +8,8 @@ Kavita account, find a title, and request it — WishPanel hands it to the right
 
 WishPanel never downloads anything itself; it's a thin, friendly orchestration layer.
 
-> **Status: 2.0 beta.** All five milestones are in: Kavita sign-in, admin settings, requests for
-> comics/manga/manhwa, Discover and Search, background jobs, the v1 importer and Logs & About.
+> **Status: 2.0.0.** Kavita sign-in, admin settings, requests for comics/manga/manhwa, Discover
+> and Search, background jobs, the v1 importer and Logs & About. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Highlights
 
@@ -55,7 +55,7 @@ Then open `http://<server>:5658` and follow the three-step setup:
 
 ### Unraid
 
-A draft Community Applications template lives in [`unraid/wishpanel.xml`](unraid/wishpanel.xml).
+A Community Applications template lives in [`unraid/wishpanel.xml`](unraid/wishpanel.xml).
 Until it's listed in CA, add the container manually with the values from the compose file above.
 
 ### Running next to Comic Requests v1

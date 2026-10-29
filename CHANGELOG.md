@@ -2,7 +2,9 @@
 
 All notable changes to WishPanel are documented here. Format: [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — 2.0.0b1
+## [2.0.0] — 2026-10-28
+
+First public release. Everything below (Milestones 1–5) ships in 2.0.0.
 
 ### Added — Milestone 3 (requests)
 - One request model for comics, manga and manhwa with the full status machine: pending, approved,
