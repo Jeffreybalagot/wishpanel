@@ -125,6 +125,23 @@ Works behind Nginx Proxy Manager, SWAG, Caddy, Traefik. Set `FORWARDED_ALLOW_IPS
 proxy's IP so login throttling sees real client IPs and session cookies get the `Secure` flag
 on HTTPS. For a sub-path, also set `BASE_URL`.
 
+## Single sign-on (optional)
+
+WishPanel can show a "Sign in with SSO" button next to the Kavita login, for any OpenID Connect
+provider (Authentik, Keycloak, Authelia, Pocket ID…). The Kavita form keeps working.
+
+1. At your provider, create an OIDC application (confidential client, authorization code flow)
+   with the redirect URI `https://<your WishPanel address>/api/auth/oidc/callback` and scopes
+   `openid email profile` (add a `groups` claim if you want group-based admins).
+2. In WishPanel: **Admin → Settings → Authentication → Single sign-on**: issuer URL (for
+   Authentik `https://<authentik>/application/o/<slug>/`), client ID and secret. Press **Test**.
+3. Set **General → Public URL** if WishPanel can't work out its own address from the proxy
+   headers — the redirect URI is built from it.
+
+People who sign in with SSO are matched to an existing account with the same email (so their
+Kavita-created account, requests and limits carry over) or get a new account. Only enable email
+linking if your provider verifies email addresses.
+
 ## Development
 
 Dependencies are locked in `uv.lock`; CI and the Docker image install exactly those versions.

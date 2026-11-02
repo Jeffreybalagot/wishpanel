@@ -81,6 +81,15 @@ SETTINGS: tuple[SettingDef, ...] = (
         ("auto", "always", "never"),
         description="auto = Secure flag when the request arrived over HTTPS",
     ),
+    # --- Single sign-on (OpenID Connect), offered next to the login provider ---
+    _b("auth.oidc.enabled", False, description="Show an SSO button on the sign-in page"),
+    _s("auth.oidc.button_label", "Sign in with SSO"),
+    _u("auth.oidc.issuer_url", description="OIDC issuer; discovery is <issuer>/.well-known/..."),
+    _s("auth.oidc.client_id", ""),
+    _s("auth.oidc.client_secret", "", secret=True),
+    _s("auth.oidc.admin_group", "", description="SSO group whose members are admins"),
+    _b("auth.oidc.link_by_email", True, description="Match SSO users to accounts by email"),
+    _b("auth.oidc.auto_create", True, description="Create accounts for new SSO users"),
     # --- Kavita ---------------------------------------------------------------
     _u("kavita.url", legacy_env=("KAVITA_URL",)),
     _s("kavita.api_key", "", secret=True, legacy_env=("KAVITA_API_KEY",)),

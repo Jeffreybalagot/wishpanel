@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from app.domain import ConnectionTestResult
+from app.providers.auth.oidc import OIDCClient
 from app.providers.base import ProviderError
 from app.providers.downloaders.kapowarr import KapowarrDownloader
 from app.providers.downloaders.suwayomi import SuwayomiDownloader
@@ -29,6 +30,7 @@ SERVICE_KEYS: dict[str, tuple[str, ...]] = {
     "kapowarr": ("kapowarr.url", "kapowarr.api_key"),
     "suwayomi": ("suwayomi.url", "suwayomi.auth_mode", "suwayomi.username", "suwayomi.password"),
     "comicvine": ("comicvine.api_key",),
+    "oidc": ("auth.oidc.issuer_url", "auth.oidc.client_id", "auth.oidc.client_secret"),
     "anilist": (
         "anilist.exclude_adult",
         "anilist.country.JP",
@@ -154,6 +156,13 @@ def build(service: str, values: Mapping[str, Any], http: httpx.AsyncClient) -> A
             )
         case "comicvine":
             return ComicVineMetadataProvider(http, values["comicvine.api_key"])
+        case "oidc":
+            return OIDCClient(
+                http,
+                values["auth.oidc.issuer_url"],
+                values["auth.oidc.client_id"],
+                values["auth.oidc.client_secret"],
+            )
         case "anilist":
             return AniListProvider(
                 http,

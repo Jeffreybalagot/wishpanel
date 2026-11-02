@@ -166,6 +166,8 @@ document.addEventListener("alpine:init", () => {
         document.title = this.site.site_name;
         document.documentElement.dataset.theme = this.site.theme || "dark";
         if (!this.site.setup_completed) return this.startSetup();
+        const ssoError = new URLSearchParams(location.search).get("sso_error");
+        if (ssoError) history.replaceState(null, "", location.pathname + location.hash);
         try {
           this.setMe(await api("GET", "api/auth/me"));
           this.view = "app";
@@ -173,6 +175,7 @@ document.addEventListener("alpine:init", () => {
         } catch (e) {
           if (e.status !== 401) throw e;
           this.showLogin();
+          if (ssoError) this.error = ssoError;
         }
       } catch (e) {
         this.fatal = e.message;

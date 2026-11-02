@@ -115,7 +115,67 @@ PAGES: tuple[Page, ...] = (
                 "(including via a trusted reverse proxy).",
                 labels={"auto": "Auto", "always": "Always (HTTPS only)", "never": "Never"},
             ),
+            Field(
+                "auth.oidc.enabled",
+                "Single sign-on (OpenID Connect)",
+                "toggle",
+                "Adds an SSO button to the sign-in page, next to the normal username and "
+                "password form (which keeps working). Register "
+                "<public URL>/api/auth/oidc/callback as the redirect URI at your provider.",
+            ),
+            Field(
+                "auth.oidc.issuer_url",
+                "Issuer URL",
+                "url",
+                "For Authentik: https://<authentik>/application/o/<app slug>/",
+                placeholder="https://sso.example.com/application/o/wishpanel/",
+                show_if=("auth.oidc.enabled", ("true",)),
+            ),
+            Field(
+                "auth.oidc.client_id",
+                "Client ID",
+                "text",
+                show_if=("auth.oidc.enabled", ("true",)),
+            ),
+            Field(
+                "auth.oidc.client_secret",
+                "Client secret",
+                "secret",
+                show_if=("auth.oidc.enabled", ("true",)),
+            ),
+            Field(
+                "auth.oidc.button_label",
+                "Button text",
+                "text",
+                show_if=("auth.oidc.enabled", ("true",)),
+            ),
+            Field(
+                "auth.oidc.admin_group",
+                "Admin group",
+                "text",
+                "Members of this group (from the provider's groups claim) are WishPanel admins. "
+                "Accounts linked to a Kavita admin stay admins either way. Empty = SSO grants "
+                "no admin rights.",
+                show_if=("auth.oidc.enabled", ("true",)),
+            ),
+            Field(
+                "auth.oidc.link_by_email",
+                "Link to existing accounts by email",
+                "toggle",
+                "An SSO sign-in with the same email as an existing (Kavita) account uses that "
+                "account, keeping its requests and limits. Only turn this on if your provider "
+                "verifies email addresses.",
+                show_if=("auth.oidc.enabled", ("true",)),
+            ),
+            Field(
+                "auth.oidc.auto_create",
+                "Create accounts for new SSO users",
+                "toggle",
+                "Off = only people who already have a WishPanel account can use SSO.",
+                show_if=("auth.oidc.enabled", ("true",)),
+            ),
         ),
+        connection="oidc",
     ),
     Page(
         "media-types",

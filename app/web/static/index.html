@@ -101,6 +101,12 @@
       <div class="notice bad" x-show="view === 'login' && error" x-text="error"></div>
       <button type="submit" class="btn block" :disabled="busy">
         <span x-show="!busy">Sign in</span><span x-show="busy">Signing in…</span></button>
+      <template x-if="site.sso_enabled">
+        <div class="sso">
+          <div class="sso-or muted"><span>or</span></div>
+          <a class="btn ghost block" href="api/auth/oidc/login" x-text="site.sso_label"></a>
+        </div>
+      </template>
     </form>
   </div>
 

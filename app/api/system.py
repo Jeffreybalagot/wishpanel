@@ -32,6 +32,8 @@ class SiteInfo(BaseModel):
     theme: str
     media_types: dict[str, bool]
     logo_version: int  # 0 = default star; >0 = custom logo at api/branding/logo?v=N
+    sso_enabled: bool = False
+    sso_label: str = ""
 
 
 @router.get("/api/system/info", response_model=SiteInfo)
@@ -47,8 +49,13 @@ async def site_info(settings: Settings) -> SiteInfo:
             "media.manga.enabled",
             "media.manhwa.enabled",
             "general.logo_version",
+            "auth.oidc.enabled",
+            "auth.oidc.button_label",
+            "auth.oidc.issuer_url",
+            "auth.oidc.client_id",
         ]
     )
+    sso = bool(s["auth.oidc.enabled"] and s["auth.oidc.issuer_url"] and s["auth.oidc.client_id"])
     return SiteInfo(
         site_name=s["general.site_name"] or "WishPanel",
         version=__version__,
@@ -61,6 +68,8 @@ async def site_info(settings: Settings) -> SiteInfo:
             "manhwa": s["media.manhwa.enabled"],
         },
         logo_version=s["general.logo_version"],
+        sso_enabled=sso,
+        sso_label=(s["auth.oidc.button_label"] or "Sign in with SSO") if sso else "",
     )
 
 

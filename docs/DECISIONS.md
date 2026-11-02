@@ -184,3 +184,17 @@ next to the secrets it protects in one download); the page tells you to keep it 
 
 **Extra env vars** — `IMPORT_DIR` and `BACKGROUND_JOBS` exist for development/tests, like
 `CONFIG_DIR`; neither carries configuration.
+
+**Single sign-on (OIDC)** — Added as a second way in rather than a new `auth.provider`, so the
+Kavita form stays available as a break-glass login and nothing about existing accounts changes.
+Code flow + PKCE with the client secret; the code is exchanged server-to-server and claims come
+from the userinfo endpoint. The ID token's payload is decoded only to check `aud`, `iss`, `nonce`
+and `sub` — like Kavita's JWT, it arrives directly from the issuer the admin configured, so no JWKS
+signature check (and no new dependency) is needed. State, nonce and the PKCE verifier live in a
+short-lived (10 min) cookie encrypted with the settings key, scoped to `/api/auth/oidc`, SameSite
+Lax so it survives the top-level redirect back. Users are matched by `sub`, then — if allowed and
+the provider doesn't say the email is unverified — by email to any existing account; a linked
+Kavita account keeps its Kavita identity (no schema change), so both sign-in methods land on the
+same user. Admin: SSO-only accounts follow the configured group; linked accounts keep Kavita's
+admin role and the group can only add admin. Failures redirect to `/?sso_error=…`, shown on the
+sign-in page.

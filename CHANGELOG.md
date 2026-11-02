@@ -4,6 +4,17 @@ All notable changes to WishPanel are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+### Added
+- Single sign-on (OpenID Connect) next to the Kavita login: Admin → Settings → Authentication →
+  "Single sign-on". Works with Authentik, Keycloak, Authelia, Pocket ID and other OIDC providers
+  (authorization code + PKCE, confidential client). The sign-in page gains a button with your
+  own label; the Kavita username/password form keeps working, so a provider outage never locks
+  anyone out. Redirect URI to register: `<public URL>/api/auth/oidc/callback`.
+- SSO sign-ins link to an existing account with the same (verified) email — typically the one a
+  Kavita sign-in created — so requests and per-user limits carry over. New SSO users get an
+  account automatically (can be turned off). Admin rights for SSO-only accounts come from an
+  optional provider group; accounts linked to a Kavita admin stay admins.
+
 ### Fixed
 - Comic requests showed "Could not reach Kapowarr: timed out waiting for a response" even though
   the volume was added: Kapowarr fetches every issue from ComicVine before answering the add call,
