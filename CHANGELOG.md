@@ -14,6 +14,9 @@ All notable changes to WishPanel are documented here. Format: [Keep a Changelog]
   Kavita sign-in created — so requests and per-user limits carry over. New SSO users get an
   account automatically (can be turned off). Admin rights for SSO-only accounts come from an
   optional provider group; accounts linked to a Kavita admin stay admins.
+- `docs/SSO-AUTHENTIK.md`: Authentik setup guide (provider, application, admin group, known
+  gotchas) and `unraid/sso-setup.py`, which writes the SSO settings from inside the container and
+  asks for the client secret without echoing it.
 
 ### Fixed
 - Comic requests showed "Could not reach Kapowarr: timed out waiting for a response" even though

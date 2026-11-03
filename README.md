@@ -142,6 +142,10 @@ People who sign in with SSO are matched to an existing account with the same ema
 Kavita-created account, requests and limits carry over) or get a new account. Only enable email
 linking if your provider verifies email addresses.
 
+Step-by-step for Authentik (including "Log in with Plex", the `email_verified` and grant-type
+gotchas, and a server-side setup script for when you can't reach the admin UI):
+[docs/SSO-AUTHENTIK.md](docs/SSO-AUTHENTIK.md).
+
 ## Development
 
 Dependencies are locked in `uv.lock`; CI and the Docker image install exactly those versions.
